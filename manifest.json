@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Tech Word Immersion",
+  "version": "1.2",
+  "description": "Highlight technical English words, track progress, and add custom vocabulary.",
+  "permissions": ["storage", "contextMenus"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["vocabulary.json"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

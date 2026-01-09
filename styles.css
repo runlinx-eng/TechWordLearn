@@ -1,0 +1,52 @@
+.tech-word-highlight {
+  background-color: #fff700;
+  color: #000;
+  cursor: pointer;
+  border-bottom: 2px solid #ff9900;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.tech-word-highlight:active {
+  background-color: #00e676;
+}
+
+/* 全局唯一的悬浮提示框 */
+#neural-tooltip-container {
+    position: fixed; /* 核心：相对于屏幕视口定位，无视父容器 */
+    z-index: 2147483647; /* 最大的整数，确保在最上层 */
+    background: rgba(10, 10, 15, 0.95);
+    border: 1px solid #00f3ff;
+    color: #00f3ff;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    pointer-events: none; /* 让鼠标可以穿透它，不影响点击 */
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+    
+    /* 默认隐藏 */
+    display: none; 
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+#neural-tooltip-container.active {
+    display: block;
+    opacity: 1;
+}
+
+/* 删掉之前的 .tech-word-highlight::after 规则 */
+
+/* 小三角 */
+.tech-word-highlight:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 115%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px; /* 稍微调小一点 */
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.85) transparent transparent transparent;
+  z-index: 10000;
+}

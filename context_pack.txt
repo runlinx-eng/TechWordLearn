@@ -1,0 +1,501 @@
+# CONTEXT PACK: TechWordLearn
+Role: Engineering Partner. Analyze the structure and code below.
+
+## 1. PROJECT STRUCTURE
+```text
+TechWordLearn/
+├── background.js
+├── content.js
+├── manifest.json
+├── popup.html
+├── popup.js
+├── styles.css
+└── vocabulary.json
+
+```
+
+## 2. SOURCE FILES
+--- FILE: popup.js ---
+```js
+document.addEventListener('DOMContentLoaded', () => {
+  // 读取所有存储的数据
+  chrome.storage.local.get(null, (items) => {
+    const listDiv = document.getElementById('stats-list');
+    
+    // 将对象转为数组并排序: [[word, count], ...]
+    const sortedWords = Object.entries(items)
+      .sort((a, b) => b[1] - a[1]); // 按次数降序排列
+
+    if (sortedWords.length === 0) {
+      listDiv.innerHTML = "<p>Go hover over some words!</p>";
+      return;
+    }
+
+    let html = '<ul>';
+    sortedWords.forEach(([word, count]) => {
+      html += `
+        <li>
+          <span class="word">${word}</span>
+          <span class="count">${count} times</span>
+        </li>
+      `;
+    });
+    html += '</ul>';
+    
+    listDiv.innerHTML = html;
+  });
+});
+```
+
+--- FILE: vocabulary.json ---
+```json
+{
+  "algorithm": "算法 (解决问题的步骤)",
+  "inference": "推理 (模型使用阶段)",
+  "latency": "延迟 (响应时间)",
+  "deploy": "部署 (发布上线)",
+  "repository": "仓库 (代码库)",
+  "argument": "参数 (传入函数的值)",
+  "variable": "变量 (数据容器)",
+  "function": "函数 (功能块)",
+  "iteration": "迭代 (重复循环)",
+  "syntax": "语法 (语言规则)",
+  "framework": "框架 (开发基座)",
+  "annotation": "标注 (打标签)",
+  "dataset": "数据集 (数据集合)",
+  "token": "词元 (文本最小单位)",
+  "prompt": "提示词 (指令)",
+  "bias": "偏见 (偏差)",
+  "context": "上下文 (语境)",
+  "epoch": "轮次 (训练周期)",
+  "parameter": "参数 (模型权重)",
+  "optimize": "优化 (提升性能)",
+  "compile": "编译 (转为机器码)",
+  "execute": "执行 (运行代码)",
+  "parse": "解析 (分析数据结构)",
+  "render": "渲染 (生成图像/页面)",
+  "debug": "调试 (修bug)",
+  "fetch": "获取 (拿数据)",
+  "request": "请求 (客户端发出的)",
+  "response": "响应 (服务器返回的)",
+  "query": "查询 (问数据库)",
+  "index": "索引 (目录)",
+  "exception": "异常 (报错)",
+  "error": "错误 (故障)",
+  "valid": "有效的 (合法的)",
+  "invalid": "无效的 (非法的)",
+  "attribute": "属性 (特征)",
+  "method": "方法 (对象的函数)",
+  "class": "类 (对象的模板)",
+  "instance": "实例 (具体的对象)",
+  "inheritance": "继承 (子类承接父类)",
+  "module": "模块 (代码单元)",
+  "package": "包 (模块集合)",
+  "library": "库 (工具集)",
+  "import": "导入 (引入库)",
+  "export": "导出 (暴露接口)",
+  "frontend": "前端 (用户界面)",
+  "backend": "后端 (服务器逻辑)",
+  "server": "服务器 (提供服务)",
+  "client": "客户端 (用户端)",
+  "database": "数据库 (存数据)",
+  "cache": "缓存 (临时高速存储)",
+  "api": "接口 (程序间通讯)",
+  "endpoint": "端点 (API地址)",
+  "authentication": "认证 (验明正身)",
+  "authorization": "授权 (赋予权限)",
+  "encryption": "加密 (保护数据)",
+  "protocol": "协议 (通讯规则)",
+  "configuration": "配置 (设置)",
+  "dependency": "依赖 (需要的库)",
+  "environment": "环境 (运行条件)",
+  "virtual": "虚拟的 (非实体的)",
+  "container": "容器 (Docker)",
+  "pipeline": "流水线 (处理流程)",
+  "version": "版本 (迭代号)",
+  "branch": "分支 (代码分叉)",
+  "commit": "提交 (保存代码快照)",
+  "merge": "合并 (代码融合)",
+  "conflict": "冲突 (代码不一致)",
+  "pull": "拉取 (下载代码)",
+  "push": "推送 (上传代码)",
+  "clone": "克隆 (复制仓库)",
+  "layer": "层 (神经网络层)",
+  "neuron": "神经元 (计算单元)",
+  "weight": "权重 (连接强度)",
+  "activation": "激活 (激发函数)",
+  "loss": "损失 (误差)",
+  "gradient": "梯度 (变化率)",
+  "backpropagation": "反向传播 (误差回传)",
+  "training": "训练 (学习过程)",
+  "validation": "验证 (测试过程)",
+  "testing": "测试 (最终考核)",
+  "accuracy": "准确率 (对的比例)",
+  "precision": "精确率 (查准率)",
+  "recall": "召回率 (查全率)",
+  "overfitting": "过拟合 (死记硬背)",
+  "underfitting": "欠拟合 (没学会)",
+  "regularization": "正则化 (防止过拟合)",
+  "normalization": "归一化 (数据缩放)",
+  "augmentation": "增强 (数据扩充)",
+  "batch": "批次 (一组数据)",
+  "embedding": "嵌入 (向量化)",
+  "vector": "向量 (数字列表)",
+  "matrix": "矩阵 (二维数组)",
+  "tensor": "张量 (多维数组)",
+  "transformer": "变换器 (主流架构)",
+  "attention": "注意力 (关注机制)",
+  "finetuning": "微调 (适应新任务)",
+  "generation": "生成 (产出内容)",
+  "classification": "分类 (分门别类)",
+  "regression": "回归 (预测数值)",
+  "clustering": "聚类 (分组)",
+  "dimension": "维度 (特征数量)",
+  "feature": "特征 (属性)",
+  "label": "标签 (答案)",
+  "supervised": "有监督 (有答案)",
+  "unsupervised": "无监督 (无答案)",
+  "reinforcement": "强化 (奖惩学习)",
+  "agent": "智能体 (行动者)",
+  "environment": "环境 (交互场所)",
+  "reward": "奖励 (反馈)",
+  "state": "状态 (当前情况)",
+  "action": "动作 (行为)",
+  "policy": "策略 (行动准则)",
+  "stable": "稳定的 (不出错)",
+  "scalable": "可扩展的 (能做大)",
+  "robust": "鲁棒的 (抗造)",
+  "efficient": "高效的 (快且省)",
+  "dynamic": "动态的 (变化的)",
+  "static": "静态的 (固定的)",
+  "synchronous": "同步的 (排队等)",
+  "asynchronous": "异步的 (不等)",
+  "concurrent": "并发的 (同时处理)",
+  "parallel": "并行的 (多核跑)",
+  "structure": "结构 (组织方式)",
+  "schema": "模式 (数据蓝图)",
+  "format": "格式 (排版)",
+  "document": "文档 (文件)",
+  "integer": "整数 (无小数)",
+  "float": "浮点数 (有小数)",
+  "string": "字符串 (文本)",
+  "boolean": "布尔值 (真假)",
+  "array": "数组 (列表)",
+  "object": "对象 (实体)",
+  "null": "空 (无值)",
+  "undefined": "未定义 (没赋值)",
+  "loop": "循环 (圈)",
+  "condition": "条件 (如果)",
+  "statement": "语句 (一行代码)",
+  "expression": "表达式 (计算式)",
+  "operator": "运算符 (+-*/)",
+  "component": "组件 (零件)",
+  "widget": "控件 (小部件)",
+  "layout": "布局 (排版)",
+  "style": "样式 (外观)",
+  "theme": "主题 (皮肤)",
+  "plugin": "插件 (扩展)",
+  "extension": "扩展 (外挂)",
+  "utility": "工具 (实用程序)",
+  "helper": "助手 (辅助函数)",
+  "wrapper": "包装器 (外壳)",
+  "interface": "界面/接口 (交互面)",
+  "abstract": "抽象的 (非具体的)",
+  "concrete": "具体的 (实际的)",
+  "generic": "通用的 (泛型的)",
+  "specific": "特定的 (专门的)",
+  "global": "全局的 (到处可见)",
+  "local": "局部的 (只限此处)",
+  "public": "公开的 (谁都能用)",
+  "private": "私有的 (自己用)"
+}
+```
+
+--- FILE: manifest.json ---
+```json
+{
+  "manifest_version": 3,
+  "name": "Tech Word Immersion",
+  "version": "1.2",
+  "description": "Highlight technical English words, track progress, and add custom vocabulary.",
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["vocabulary.json"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
+```
+
+--- FILE: background.js ---
+```js
+chrome.runtime.onInstalled.addListener(() => {
+  // 1. 先移除已有的菜单，防止重复ID报错
+  chrome.contextMenus.removeAll(() => {
+    // 2. 只有移除成功后，才创建新的
+    chrome.contextMenus.create({
+      id: "add-tech-word",
+      title: "Add \"%s\" to Tech Vocabulary",
+      contexts: ["selection"]
+    });
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "add-tech-word" && info.selectionText) {
+    chrome.tabs.sendMessage(tab.id, {
+      action: "prompt_for_definition",
+      word: info.selectionText.trim()
+    });
+  }
+});
+```
+
+--- FILE: content.js ---
+```js
+let vocabulary = {};
+let masteredWords = new Set();
+const vocabUrl = chrome.runtime.getURL('vocabulary.json');
+let scanTimeout = null;
+
+initialize();
+
+function initialize() {
+  Promise.all([
+    chrome.storage.local.get(['mastered_list', 'custom_vocab']),
+    fetch(vocabUrl).then(res => res.json())
+  ]).then(([storageData, baseVocab]) => {
+    if (storageData.mastered_list) {
+      masteredWords = new Set(storageData.mastered_list);
+    }
+    const customVocab = storageData.custom_vocab || {};
+    vocabulary = { ...baseVocab, ...customVocab };
+
+    scanAndHighlight(document.body);
+    observeChanges();
+  });
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "prompt_for_definition") {
+    handleAddWord(request.word);
+  }
+});
+
+function handleAddWord(rawWord) {
+  const wordKey = rawWord.toLowerCase();
+  const definition = prompt(`添加生词:\n"${rawWord}"\n\n请输入中文释义:`, "自定义笔记");
+  
+  if (definition && definition.trim() !== "") {
+    vocabulary[wordKey] = definition;
+    chrome.storage.local.get(['custom_vocab'], (result) => {
+      const currentCustom = result.custom_vocab || {};
+      currentCustom[wordKey] = definition;
+      chrome.storage.local.set({ custom_vocab: currentCustom }, () => {
+        if (masteredWords.has(wordKey)) {
+          masteredWords.delete(wordKey);
+          chrome.storage.local.set({ mastered_list: Array.from(masteredWords) });
+        }
+        scanAndHighlight(document.body);
+      });
+    });
+  }
+}
+
+function scanAndHighlight(root) {
+  const words = Object.keys(vocabulary);
+  if (words.length === 0) return;
+  
+  const activeWords = words.filter(w => !masteredWords.has(w));
+  if (activeWords.length === 0) return;
+
+  const sortedWords = activeWords.sort((a, b) => b.length - a.length);
+  const pattern = `\\b(${sortedWords.join('|')})(?:s|es|d|ed|ing|ly)?\\b`;
+  const regex = new RegExp(pattern, 'gi'); 
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  const nodesToReplace = [];
+
+  while (node = walker.nextNode()) {
+    const parent = node.parentNode;
+    if (parent.nodeName === 'SCRIPT' || 
+        parent.nodeName === 'STYLE' || 
+        parent.classList.contains('tech-word-highlight') ||
+        parent.isContentEditable) { 
+      continue;
+    }
+    if (regex.test(node.nodeValue)) {
+      nodesToReplace.push(node);
+    }
+  }
+
+  nodesToReplace.forEach(node => {
+    const fragment = document.createDocumentFragment();
+    const text = node.nodeValue;
+    let lastIndex = 0;
+    
+    text.replace(regex, (match, rootWord, offset) => {
+      const before = text.slice(lastIndex, offset);
+      if (before) fragment.appendChild(document.createTextNode(before));
+      
+      const lowerMatch = match.toLowerCase();
+      const dictionaryKey = findRootInVocab(lowerMatch);
+
+      if (dictionaryKey && !masteredWords.has(dictionaryKey)) {
+        const span = document.createElement('span');
+        span.className = 'tech-word-highlight';
+        span.textContent = match;
+        span.dataset.word = dictionaryKey;
+        
+        // --- 极简修改：初始只存定义，不显示任何提示文案 ---
+        span.dataset.tooltip = vocabulary[dictionaryKey];
+        
+        span.addEventListener('mouseenter', () => handleHover(dictionaryKey, span));
+        span.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (e.altKey) {
+            markAsMastered(dictionaryKey);
+          } else {
+            speakText(match);
+            // 这里的 Toast 提示也可以去掉了，既然你自己知道
+          }
+        });
+        fragment.appendChild(span);
+      } else {
+        fragment.appendChild(document.createTextNode(match));
+      }
+      lastIndex = offset + match.length;
+      return match;
+    });
+
+    const remaining = text.slice(lastIndex);
+    if (remaining) fragment.appendChild(document.createTextNode(remaining));
+    node.parentNode.replaceChild(fragment, node);
+  });
+}
+
+function findRootInVocab(word) {
+  if (vocabulary[word]) return word;
+  const suffixes = ['ing', 'ed', 'es', 's', 'd', 'ly'];
+  for (const suffix of suffixes) {
+    if (word.endsWith(suffix)) {
+      const stem = word.slice(0, -suffix.length);
+      if (vocabulary[stem]) return stem;
+    }
+  }
+  return null;
+}
+
+function handleHover(word, element) {
+  chrome.storage.local.get([word], (result) => {
+    const newCount = (result[word] || 0) + 1;
+    chrome.storage.local.set({ [word]: newCount });
+    const def = vocabulary[word];
+    
+    // --- 极简修改：悬停时显示 "定义 + 换行 + [N]" ---
+    if (element) {
+        element.dataset.tooltip = `${def}\n[${newCount}]`;
+    }
+  });
+}
+
+function speakText(text) {
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  window.speechSynthesis.speak(utterance);
+}
+
+function markAsMastered(word) {
+  // 保持 confirm 防止误触，但文案简化
+  if (confirm(`标记为已掌握：${word}?`)) {
+    masteredWords.add(word);
+    chrome.storage.local.set({ 'mastered_list': Array.from(masteredWords) });
+    const highlights = document.querySelectorAll(`.tech-word-highlight[data-word="${word}"]`);
+    highlights.forEach(el => {
+      const text = document.createTextNode(el.textContent);
+      el.parentNode.replaceChild(text, el);
+    });
+  }
+}
+
+function observeChanges() {
+  const observer = new MutationObserver((mutations) => {
+    if (scanTimeout) clearTimeout(scanTimeout);
+    scanTimeout = setTimeout(() => {
+      let hasNewElements = false;
+      for (const mutation of mutations) {
+        if (mutation.addedNodes.length > 0) {
+          hasNewElements = true;
+          break;
+        }
+      }
+      if (hasNewElements) {
+        scanAndHighlight(document.body);
+      }
+    }, 1000);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+// 1. 初始化：在页面底部插入那个全局 Tooltip
+const tooltipEl = document.createElement('div');
+tooltipEl.id = 'neural-tooltip-container';
+document.body.appendChild(tooltipEl);
+
+function handleHover(event) {
+    const target = event.target;
+    // 检查是否是我们标记的单词
+    if (!target.classList.contains('tech-word-highlight')) return;
+
+    // 获取字典定义 key
+    const dictionaryKey = target.dataset.key; 
+    if (!dictionaryKey) return;
+
+    // === 核心逻辑：计算位置 ===
+    // getBoundingClientRect() 获取元素相对于“视口”的坐标
+    const rect = target.getBoundingClientRect();
+
+    // 更新 Tooltip 内容
+    // (假设 vocabulary 是你之前的字典对象)
+    const def = vocabulary[dictionaryKey] || "Unknown";
+    tooltipEl.innerText = def;
+
+    // 移动 Tooltip
+    // 让它显示在单词下方 5px 的位置
+    // rect.left = 单词左边缘, rect.bottom = 单词下边缘
+    tooltipEl.style.left = `${rect.left}px`;
+    tooltipEl.style.top = `${rect.bottom + 5}px`;
+
+    // 显示
+    tooltipEl.classList.add('active');
+}
+
+function handleLeave() {
+    // 隐藏
+    tooltipEl.classList.remove('active');
+}
+
+// 2. 绑定事件 (使用事件委托，性能更好)
+// 只要监听 document 即可，不用给每个单词都绑事件
+document.addEventListener('mouseover', handleHover);
+document.addEventListener('mouseout', handleLeave);
+```

@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# build outputs / deps (若未来加入)
+node_modules/
+dist/
+build/
+
+# temporary
+*_tree.txt
