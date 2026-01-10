@@ -26,6 +26,40 @@
 
   let hoverSeq = 0; // 防止异步 storage 回调串台
 
+  // --- Stable TTS (fix low/hoarse voice on macOS/Chrome) ---
+  let __tts_inited = false;
+  let __tts_voice = null;
+  let __tts_lastSpeakAt = 0;
+
+  function __tts_pickVoice(voices) {
+    // macOS 常见更清晰的英文音色优先
+    return (
+      voices.find((v) => v.lang === "en-US" && /Samantha/i.test(v.name)) ||
+      voices.find((v) => v.lang === "en-US" && /Alex/i.test(v.name)) ||
+      voices.find((v) => v.lang === "en-US") ||
+      voices.find((v) => (v.lang || "").toLowerCase().startsWith("en")) ||
+      voices[0] ||
+      null
+    );
+  }
+
+  function __tts_initOnce() {
+    if (__tts_inited) return;
+    __tts_inited = true;
+
+    const load = () => {
+      const voices = window.speechSynthesis.getVoices() || [];
+      __tts_voice = __tts_pickVoice(voices);
+      // 调试需要可以打开：
+      // console.log("[TTS voice]", __tts_voice?.name, __tts_voice?.lang);
+    };
+
+    // 先尝试加载一次
+    load();
+    // voices 可能异步到达
+    window.speechSynthesis.addEventListener("voiceschanged", load);
+  }
+
   function escapeRegExp(s) {
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -135,9 +169,10 @@
     const fromSpan = e.target && e.target.closest ? e.target.closest(".tech-word-highlight") : null;
     if (!fromSpan) return;
 
-    const toSpan = e.relatedTarget && e.relatedTarget.closest
-      ? e.relatedTarget.closest(".tech-word-highlight")
-      : null;
+    const toSpan =
+      e.relatedTarget && e.relatedTarget.closest
+        ? e.relatedTarget.closest(".tech-word-highlight")
+        : null;
 
     // 从一个高亮移到另一个高亮：不隐藏（mouseover 会更新 tooltip）
     if (toSpan) return;
@@ -161,7 +196,7 @@
     }
 
     // speak + count
-    speakText(span.innerText || span.textContent || key);
+    speakText((span.textContent || key).trim());
     updateWordCount(key);
   }
 
@@ -178,9 +213,22 @@
 
   function speakText(text) {
     try {
+      __tts_initOnce();
+
+      const now = Date.now();
+      // 防止极少数情况下同一次点击触发多次 speak，听起来会“糊/沙哑”
+      if (now - __tts_lastSpeakAt < 180) return;
+      __tts_lastSpeakAt = now;
+
       window.speechSynthesis.cancel();
+
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "en-US";
+      u.rate = 1.0;
+      u.pitch = 1.12; // 想更亮：1.15~1.2；想更自然：1.0
+      u.volume = 1.0;
+      if (__tts_voice) u.voice = __tts_voice;
+
       window.speechSynthesis.speak(u);
     } catch (_) {}
   }
@@ -192,11 +240,14 @@
     chrome.storage.local.set({ mastered_list: Array.from(masteredWords) });
 
     // 重要：保留原格式（斜体/代码），不要直接替换成纯文本
-    const spans = document.querySelectorAll(`.tech-word-highlight[data-key="${CSS.escape(word)}"]`);
+    const spans = document.querySelectorAll(
+      `.tech-word-highlight[data-key="${CSS.escape(word)}"]`
+    );
     spans.forEach(unwrapSpanKeepChildren);
 
     hideTooltip();
     hoverSeq++;
+    compileMatchers();
     compileMatchers();
   }
 
@@ -279,7 +330,8 @@
 
   function locateByIndex(nodes, prefixLens, idx) {
     // idx in [0, total]
-    let lo = 0, hi = nodes.length - 1;
+    let lo = 0,
+      hi = nodes.length - 1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       const start = prefixLens[mid];
@@ -352,8 +404,18 @@
       if (!s || !e) continue;
 
       // 如果已经在高亮里就跳过
-      if (s.node.parentNode && s.node.parentNode.closest && s.node.parentNode.closest(".tech-word-highlight")) continue;
-      if (e.node.parentNode && e.node.parentNode.closest && e.node.parentNode.closest(".tech-word-highlight")) continue;
+      if (
+        s.node.parentNode &&
+        s.node.parentNode.closest &&
+        s.node.parentNode.closest(".tech-word-highlight")
+      )
+        continue;
+      if (
+        e.node.parentNode &&
+        e.node.parentNode.closest &&
+        e.node.parentNode.closest(".tech-word-highlight")
+      )
+        continue;
 
       try {
         const r = document.createRange();
