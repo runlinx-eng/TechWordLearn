@@ -1,3 +1,5 @@
+console.log("[TechWordLearn] background.js active v1.5");
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -21,4 +23,43 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       }
     }
   );
+});
+
+chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+  if (!req || req.action !== "speak_word") return;
+
+  const text = String(req.text || "").trim();
+  if (!text) {
+    sendResponse({ ok: false, error: "empty_text" });
+    return;
+  }
+
+  try {
+    try {
+      chrome.tts.stop();
+    } catch (_) {}
+
+    chrome.tts.speak(
+      text,
+      {
+        lang: "en-US",
+        rate: 1.0,
+        pitch: 1.1,
+        volume: 1.0,
+        enqueue: false,
+      },
+      () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          sendResponse({ ok: false, error: err.message || "tts_speak_failed" });
+          return;
+        }
+        sendResponse({ ok: true });
+      }
+    );
+  } catch (err) {
+    sendResponse({ ok: false, error: (err && err.message) || "tts_speak_failed" });
+  }
+
+  return true;
 });

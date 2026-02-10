@@ -6,11 +6,18 @@
   // 防止重复注入导致重复绑定事件
   if (window.__techwordlearn_loaded__) return;
   window.__techwordlearn_loaded__ = true;
+  console.log("[TechWordLearn] content.js active v1.5");
 
   let vocabulary = {};
   let masteredWords = new Set();
 
-  const vocabUrl = chrome.runtime.getURL("vocabulary.json");
+  const vocabUrl = (() => {
+    try {
+      return chrome.runtime.getURL("vocabulary.json");
+    } catch (_) {
+      return null;
+    }
+  })();
   const SUFFIXES = ["ing", "ed", "es", "s", "d", "ly"];
 
   // --- Tooltip (single global) ---
@@ -25,11 +32,147 @@
   let scanTimer = null;
 
   let hoverSeq = 0; // 防止异步 storage 回调串台
+  let warnedInvalidContext = false;
 
   // --- Stable TTS (fix low/hoarse voice on macOS/Chrome) ---
   let __tts_inited = false;
   let __tts_voice = null;
   let __tts_lastSpeakAt = 0;
+  let __tts_requestSeq = 0;
+
+  function isContextInvalidated(errOrMsg) {
+    const msg =
+      typeof errOrMsg === "string"
+        ? errOrMsg
+        : errOrMsg && errOrMsg.message
+        ? errOrMsg.message
+        : "";
+    return /extension context invalidated/i.test(String(msg));
+  }
+
+  function hasExtensionContext() {
+    try {
+      return Boolean(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function warnInvalidContextOnce() {
+    if (warnedInvalidContext) return;
+    warnedInvalidContext = true;
+    console.warn(
+      "[TechWordLearn] Extension context invalidated. Refresh this page to reattach extension APIs."
+    );
+  }
+
+  function safeChromeCall(onFailure, fn) {
+    if (!hasExtensionContext()) {
+      warnInvalidContextOnce();
+      if (onFailure) onFailure();
+      return;
+    }
+    try {
+      fn();
+    } catch (err) {
+      if (isContextInvalidated(err)) warnInvalidContextOnce();
+      else console.warn("[TechWordLearn] Chrome API call failed:", err);
+      if (onFailure) onFailure();
+    }
+  }
+
+  function safeStorageGet(keys, callback) {
+    safeChromeCall(
+      () => callback({}),
+      () => {
+        chrome.storage.local.get(keys, (result) => {
+          if (!hasExtensionContext()) {
+            warnInvalidContextOnce();
+            callback({});
+            return;
+          }
+
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr) {
+            if (isContextInvalidated(lastErr)) warnInvalidContextOnce();
+            callback({});
+            return;
+          }
+          callback(result || {});
+        });
+      }
+    );
+  }
+
+  function safeStorageSet(payload, callback) {
+    safeChromeCall(
+      () => {
+        if (callback) callback();
+      },
+      () => {
+        chrome.storage.local.set(payload, () => {
+          if (!hasExtensionContext()) {
+            warnInvalidContextOnce();
+            if (callback) callback();
+            return;
+          }
+
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr && isContextInvalidated(lastErr)) warnInvalidContextOnce();
+          if (callback) callback();
+        });
+      }
+    );
+  }
+
+  function safeStorageGetPromise(keys) {
+    return new Promise((resolve) => {
+      safeStorageGet(keys, resolve);
+    });
+  }
+
+  function safeAddStorageOnChangedListener(listener) {
+    safeChromeCall(null, () => {
+      chrome.storage.onChanged.addListener(listener);
+    });
+  }
+
+  function safeAddRuntimeOnMessageListener(listener) {
+    safeChromeCall(null, () => {
+      chrome.runtime.onMessage.addListener(listener);
+    });
+  }
+
+  function safeRuntimeSendMessage(payload, callback) {
+    safeChromeCall(
+      () => {
+        if (callback) callback(null);
+      },
+      () => {
+        chrome.runtime.sendMessage(payload, (res) => {
+          if (!hasExtensionContext()) {
+            warnInvalidContextOnce();
+            if (callback) callback(null);
+            return;
+          }
+          const lastErr = chrome.runtime.lastError;
+          if (lastErr) {
+            if (isContextInvalidated(lastErr)) warnInvalidContextOnce();
+            if (callback) callback(null);
+            return;
+          }
+          if (callback) callback(res || null);
+        });
+      }
+    );
+  }
+
+  function loadBaseVocabulary() {
+    if (!vocabUrl) return Promise.resolve({});
+    return fetch(vocabUrl)
+      .then((r) => r.json())
+      .catch(() => ({}));
+  }
 
   function __tts_pickVoice(voices) {
     // macOS 常见更清晰的英文音色优先
@@ -151,7 +294,7 @@
     const def = vocabulary[key];
     const my = ++hoverSeq;
 
-    chrome.storage.local.get([key], (res) => {
+    safeStorageGet([key], (res) => {
       if (my !== hoverSeq) return;
 
       const count = res[key] || 0;
@@ -205,39 +348,78 @@
   document.addEventListener("click", onClick, true);
 
   function updateWordCount(word) {
-    chrome.storage.local.get([word], (result) => {
+    safeStorageGet([word], (result) => {
       const newCount = (result[word] || 0) + 1;
-      chrome.storage.local.set({ [word]: newCount });
+      safeStorageSet({ [word]: newCount });
+    });
+  }
+
+  function speakViaWebSpeech(text) {
+    return new Promise((resolve) => {
+      try {
+        __tts_initOnce();
+        window.speechSynthesis.resume();
+        window.speechSynthesis.cancel();
+
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "en-US";
+        u.rate = 1.0;
+        u.pitch = 1.12; // 想更亮：1.15~1.2；想更自然：1.0
+        u.volume = 1.0;
+        if (__tts_voice) u.voice = __tts_voice;
+
+        let settled = false;
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          resolve(Boolean(ok));
+        };
+
+        u.onstart = () => finish(true);
+        u.onerror = () => finish(false);
+
+        window.speechSynthesis.speak(u);
+
+        // 某些页面会吞掉 speak；超时后用状态兜底判断
+        setTimeout(() => {
+          finish(window.speechSynthesis.speaking || window.speechSynthesis.pending);
+        }, 260);
+      } catch (_) {
+        resolve(false);
+      }
+    });
+  }
+
+  function speakViaChromeTts(text) {
+    safeRuntimeSendMessage({ action: "speak_word", text }, (res) => {
+      if (!res || !res.ok) {
+        console.warn("[TechWordLearn] TTS fallback failed.");
+      }
     });
   }
 
   function speakText(text) {
-    try {
-      __tts_initOnce();
+    const phrase = String(text || "").trim();
+    if (!phrase) return;
 
-      const now = Date.now();
-      // 防止极少数情况下同一次点击触发多次 speak，听起来会“糊/沙哑”
-      if (now - __tts_lastSpeakAt < 180) return;
-      __tts_lastSpeakAt = now;
+    const now = Date.now();
+    // 防止极少数情况下同一次点击触发多次 speak，听起来会“糊/沙哑”
+    if (now - __tts_lastSpeakAt < 180) return;
+    __tts_lastSpeakAt = now;
+    const reqId = ++__tts_requestSeq;
 
-      window.speechSynthesis.cancel();
-
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = "en-US";
-      u.rate = 1.0;
-      u.pitch = 1.12; // 想更亮：1.15~1.2；想更自然：1.0
-      u.volume = 1.0;
-      if (__tts_voice) u.voice = __tts_voice;
-
-      window.speechSynthesis.speak(u);
-    } catch (_) {}
+    speakViaWebSpeech(phrase).then((ok) => {
+      // 有更新的点击请求时，忽略旧请求结果
+      if (reqId !== __tts_requestSeq) return;
+      if (!ok) speakViaChromeTts(phrase);
+    });
   }
 
   function markAsMastered(word) {
     if (!confirm(`标记为已掌握：${word}?`)) return;
 
     masteredWords.add(word);
-    chrome.storage.local.set({ mastered_list: Array.from(masteredWords) });
+    safeStorageSet({ mastered_list: Array.from(masteredWords) });
 
     // 重要：保留原格式（斜体/代码），不要直接替换成纯文本
     const spans = document.querySelectorAll(
@@ -247,7 +429,6 @@
 
     hideTooltip();
     hoverSeq++;
-    compileMatchers();
     compileMatchers();
   }
 
@@ -480,7 +661,7 @@
   }
 
   // --- Storage sync ---
-  chrome.storage.onChanged.addListener((changes, area) => {
+  safeAddStorageOnChangedListener((changes, area) => {
     if (area !== "local") return;
 
     if (changes.mastered_list) {
@@ -490,18 +671,15 @@
 
     if (changes.custom_vocab) {
       const nextCustom = changes.custom_vocab.newValue || {};
-      fetch(vocabUrl)
-        .then((r) => r.json())
-        .then((baseVocab) => {
-          vocabulary = { ...baseVocab, ...nextCustom };
-          scheduleRescan();
-        })
-        .catch(() => {});
+      loadBaseVocabulary().then((baseVocab) => {
+        vocabulary = { ...baseVocab, ...nextCustom };
+        scheduleRescan();
+      });
     }
   });
 
   // --- Context menu add word message ---
-  chrome.runtime.onMessage.addListener((req) => {
+  safeAddRuntimeOnMessageListener((req) => {
     if (req && req.action === "prompt_for_definition") {
       const key = normalizeWord(req.word);
       if (!key) return;
@@ -511,15 +689,15 @@
 
       vocabulary[key] = def;
 
-      chrome.storage.local.get(["custom_vocab"], (res) => {
+      safeStorageGet(["custom_vocab"], (res) => {
         const custom = res.custom_vocab || {};
         custom[key] = def;
 
-        chrome.storage.local.set({ custom_vocab: custom }, () => {
+        safeStorageSet({ custom_vocab: custom }, () => {
           // 如果之前掌握过，撤销掌握
           if (masteredWords.has(key)) {
             masteredWords.delete(key);
-            chrome.storage.local.set({ mastered_list: Array.from(masteredWords) });
+            safeStorageSet({ mastered_list: Array.from(masteredWords) });
           }
           scheduleRescan();
         });
@@ -528,10 +706,7 @@
   });
 
   // --- Init ---
-  Promise.all([
-    chrome.storage.local.get(["mastered_list", "custom_vocab"]),
-    fetch(vocabUrl).then((r) => r.json()),
-  ])
+  Promise.all([safeStorageGetPromise(["mastered_list", "custom_vocab"]), loadBaseVocabulary()])
     .then(([st, baseVocab]) => {
       masteredWords = new Set(st.mastered_list || []);
       const custom = st.custom_vocab || {};
