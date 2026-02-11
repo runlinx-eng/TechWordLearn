@@ -3,13 +3,14 @@
   "name": "Tech Word Immersion",
   "version": "1.5",
   "description": "Highlight technical English words, track progress, and add custom vocabulary.",
-  "permissions": ["storage", "contextMenus", "tts"],
+  "permissions": ["storage", "contextMenus", "tts", "scripting", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

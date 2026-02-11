@@ -11,3 +11,10 @@ build/
 
 # temporary
 *_tree.txt
+
+# release / share artifacts
+release/
+*.zip
+imports/
+*.bak.*
+*.log

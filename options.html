@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TechWordLearn Vocabulary Manager</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <h1>词库管理</h1>
+        <p class="subtitle">手动调整、导入导出与快照恢复</p>
+      </div>
+      <p id="status" class="status">Ready</p>
+    </header>
+
+    <section class="panel toolbar">
+      <input id="search-input" type="search" placeholder="搜索单词或释义..." />
+      <button id="export-btn" class="btn secondary">导出 JSON</button>
+      <label class="btn secondary file-btn">
+        导入 JSON
+        <input id="import-input" type="file" accept="application/json,.json" />
+      </label>
+    </section>
+
+    <section class="panel weekly-panel">
+      <h2>本周高频 Top 10</h2>
+      <p id="weekly-summary" class="summary">Loading...</p>
+      <div id="weekly-top-list" class="weekly-top-list"></div>
+    </section>
+
+    <section class="panel editor">
+      <h2 id="editor-title">新增或修改词条</h2>
+      <form id="edit-form">
+        <div class="field-row">
+          <label for="word-input">单词</label>
+          <input id="word-input" type="text" placeholder="algorithm" maxlength="80" required />
+        </div>
+        <div class="field-row">
+          <label for="def-input">释义</label>
+          <textarea id="def-input" rows="3" placeholder="算法（解决问题的步骤）" required></textarea>
+        </div>
+        <div class="actions">
+          <button id="save-btn" type="submit" class="btn primary">保存</button>
+          <button id="reset-form-btn" type="button" class="btn secondary">清空表单</button>
+        </div>
+      </form>
+      <p class="hint">删除基线词时会进入“已隐藏词”，可随时恢复。</p>
+    </section>
+
+    <section class="panel list-panel">
+      <h2 id="vocab-section-title">当前生效词库</h2>
+      <p id="summary" class="summary">Loading...</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Word</th>
+              <th>Definition</th>
+              <th>Queries</th>
+              <th>Source</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="vocab-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel hidden-panel">
+      <h2>已隐藏词</h2>
+      <p id="hidden-summary" class="summary">0</p>
+      <div id="hidden-list" class="hidden-list"></div>
+    </section>
+
+    <section class="panel version-panel">
+      <div class="backup-header">
+        <h2>最近3个词库版本</h2>
+        <p id="version-summary" class="summary">Loading...</p>
+      </div>
+      <p id="active-version-display" class="summary">当前生效：Loading...</p>
+      <div id="version-list" class="version-list"></div>
+      <div class="version-preview">
+        <h3 id="version-preview-title">请选择一个版本</h3>
+        <div id="version-preview-list" class="version-preview-list"></div>
+        <div class="actions">
+          <button id="set-current-version-btn" class="btn primary" type="button" disabled>
+            设置为当前版本
+          </button>
+          <button id="view-live-btn" class="btn secondary" type="button">切回实时词库</button>
+          <button id="clear-backups-btn" class="btn secondary" type="button">清空版本记录</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

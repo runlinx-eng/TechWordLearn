@@ -1,0 +1,1036 @@
+const MAX_BACKUPS = 20;
+
+let baseVocab = {};
+let customVocab = {};
+let wordCounts = {};
+let weeklyWordCounts = {};
+let deletedSet = new Set();
+let backups = [];
+let rows = [];
+let currentFilter = "";
+let editingWord = null;
+let selectedVersionId = null;
+let currentVersionId = null;
+let currentVersionMode = "live";
+let pageViewMode = "live";
+let isReadOnlyView = false;
+
+const statusEl = document.getElementById("status");
+const summaryEl = document.getElementById("summary");
+const hiddenSummaryEl = document.getElementById("hidden-summary");
+const weeklySummaryEl = document.getElementById("weekly-summary");
+const versionSummaryEl = document.getElementById("version-summary");
+const activeVersionDisplayEl = document.getElementById("active-version-display");
+const vocabSectionTitleEl = document.getElementById("vocab-section-title");
+
+const searchInput = document.getElementById("search-input");
+const tbody = document.getElementById("vocab-tbody");
+const hiddenListEl = document.getElementById("hidden-list");
+const weeklyTopListEl = document.getElementById("weekly-top-list");
+const versionListEl = document.getElementById("version-list");
+const versionPreviewTitleEl = document.getElementById("version-preview-title");
+const versionPreviewListEl = document.getElementById("version-preview-list");
+const setCurrentVersionBtn = document.getElementById("set-current-version-btn");
+const viewLiveBtn = document.getElementById("view-live-btn");
+
+const editorTitleEl = document.getElementById("editor-title");
+const editForm = document.getElementById("edit-form");
+const wordInput = document.getElementById("word-input");
+const defInput = document.getElementById("def-input");
+const saveBtn = document.getElementById("save-btn");
+const resetFormBtn = document.getElementById("reset-form-btn");
+
+function normalizeWord(raw) {
+  const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
+  return m ? m[0].toLowerCase() : null;
+}
+
+function sanitizeWordMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== "string") continue;
+    if (typeof v !== "string") continue;
+    const key = normalizeWord(k);
+    const value = v.trim();
+    if (!key || value === "") continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+function sanitizeWordList(raw) {
+  if (!Array.isArray(raw)) return [];
+  const next = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const key = normalizeWord(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    next.push(key);
+  }
+  return next;
+}
+
+function sanitizeWordCountMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const key = normalizeWord(k);
+    if (!key || key !== k) continue;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0) continue;
+    out[key] = Math.floor(v);
+  }
+  return out;
+}
+
+function extractWordCounts(items) {
+  const out = {};
+  if (!items || typeof items !== "object") return out;
+  for (const [key, value] of Object.entries(items)) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    const normalized = normalizeWord(key);
+    if (!normalized || normalized !== key) continue;
+    out[key] = Math.floor(value);
+  }
+  return out;
+}
+
+function sanitizeWeeklyWordCounts(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [weekKey, value] of Object.entries(raw)) {
+    if (!/^\d{4}-W\d{2}$/.test(weekKey)) continue;
+    out[weekKey] = sanitizeWordCountMap(value);
+  }
+  return out;
+}
+
+function getCurrentWeekKey() {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+function currentWeekCountMap() {
+  const weekKey = getCurrentWeekKey();
+  return sanitizeWordCountMap(weeklyWordCounts[weekKey]);
+}
+
+function makeId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function setStatus(text, isError = false) {
+  statusEl.textContent = text;
+  statusEl.style.color = isError ? "#b91c1c" : "#475569";
+  statusEl.style.background = isError ? "#fee2e2" : "#edf2f7";
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toLocaleString();
+}
+
+function shortText(text, maxLen) {
+  const s = String(text || "");
+  return s.length > maxLen ? `${s.slice(0, maxLen)}...` : s;
+}
+
+function buildEffectiveVocab(custom, deletedWordSet) {
+  const merged = { ...baseVocab, ...custom };
+  deletedWordSet.forEach((word) => {
+    delete merged[word];
+  });
+  return merged;
+}
+
+function currentEffectiveVocab() {
+  return buildEffectiveVocab(customVocab, deletedSet);
+}
+
+function rankRowsForVocab(vocabMap, limit, preferWeekly) {
+  const weekMap = currentWeekCountMap();
+  const items = Object.entries(vocabMap).map(([word, definition]) => ({
+    word,
+    definition,
+    weekCount: weekMap[word] || 0,
+    totalCount: wordCounts[word] || 0,
+  }));
+
+  const byWeekly = items
+    .filter((it) => it.weekCount > 0)
+    .sort((a, b) => b.weekCount - a.weekCount || b.totalCount - a.totalCount || a.word.localeCompare(b.word));
+
+  if (preferWeekly && byWeekly.length > 0) {
+    return byWeekly.slice(0, limit);
+  }
+
+  const byTotal = items
+    .filter((it) => it.totalCount > 0)
+    .sort((a, b) => b.totalCount - a.totalCount || a.word.localeCompare(b.word));
+
+  if (byTotal.length > 0) {
+    return byTotal.slice(0, limit);
+  }
+
+  return items.sort((a, b) => a.word.localeCompare(b.word)).slice(0, limit);
+}
+
+function mergeRows(viewCustom, viewDeleted) {
+  const customMap = viewCustom || customVocab;
+  const deletedWordSet = viewDeleted || deletedSet;
+  const merged = {};
+  for (const [word, def] of Object.entries(baseVocab)) {
+    if (deletedWordSet.has(word)) continue;
+    merged[word] = {
+      word,
+      definition: def,
+      count: wordCounts[word] || 0,
+      source: "基线",
+      hasBase: true,
+      hasCustom: false,
+    };
+  }
+
+  for (const [word, def] of Object.entries(customMap)) {
+    if (deletedWordSet.has(word)) continue;
+    const hasBase = Object.prototype.hasOwnProperty.call(baseVocab, word);
+    merged[word] = {
+      word,
+      definition: def,
+      count: wordCounts[word] || 0,
+      source: hasBase ? "覆盖基线" : "自定义",
+      hasBase,
+      hasCustom: true,
+    };
+  }
+
+  rows = Object.values(merged).sort((a, b) => b.count - a.count || a.word.localeCompare(b.word));
+}
+
+function rowMatchesFilter(row) {
+  if (!currentFilter) return true;
+  return row.word.includes(currentFilter) || row.definition.toLowerCase().includes(currentFilter);
+}
+
+function renderTable() {
+  tbody.innerHTML = "";
+  const filtered = rows.filter(rowMatchesFilter);
+
+  if (filtered.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.className = "empty";
+    td.textContent = "没有匹配的词条";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const row of filtered) {
+    const tr = document.createElement("tr");
+
+    const tdWord = document.createElement("td");
+    tdWord.textContent = row.word;
+    tr.appendChild(tdWord);
+
+    const tdDef = document.createElement("td");
+    tdDef.textContent = row.definition;
+    tr.appendChild(tdDef);
+
+    const tdCount = document.createElement("td");
+    tdCount.textContent = String(row.count || 0);
+    tr.appendChild(tdCount);
+
+    const tdSource = document.createElement("td");
+    tdSource.textContent = row.source;
+    tr.appendChild(tdSource);
+
+    const tdAction = document.createElement("td");
+    if (isReadOnlyView) {
+      tdAction.className = "empty";
+      tdAction.textContent = "预览只读";
+      tr.appendChild(tdAction);
+      tbody.appendChild(tr);
+      continue;
+    }
+
+    const actionWrap = document.createElement("div");
+    actionWrap.className = "row-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "small-btn";
+    editBtn.textContent = "编辑";
+    editBtn.addEventListener("click", () => startEdit(row.word, row.definition));
+    actionWrap.appendChild(editBtn);
+
+    if (row.hasBase && row.hasCustom) {
+      const restoreBaseBtn = document.createElement("button");
+      restoreBaseBtn.type = "button";
+      restoreBaseBtn.className = "small-btn";
+      restoreBaseBtn.textContent = "恢复基线";
+      restoreBaseBtn.addEventListener("click", () => restoreBaseline(row.word));
+      actionWrap.appendChild(restoreBaseBtn);
+    }
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "small-btn danger";
+    deleteBtn.textContent = "删除";
+    deleteBtn.addEventListener("click", () => removeWord(row.word));
+    actionWrap.appendChild(deleteBtn);
+
+    tdAction.appendChild(actionWrap);
+    tr.appendChild(tdAction);
+
+    tbody.appendChild(tr);
+  }
+}
+
+function renderHidden(viewDeletedSet) {
+  const deletedWordSet = viewDeletedSet || deletedSet;
+  hiddenListEl.innerHTML = "";
+  const words = Array.from(deletedWordSet).sort((a, b) => a.localeCompare(b));
+  hiddenSummaryEl.textContent = `${words.length} 个已隐藏词`;
+
+  if (words.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "summary";
+    empty.textContent = "暂无";
+    hiddenListEl.appendChild(empty);
+    return;
+  }
+
+  for (const word of words) {
+    const item = document.createElement("div");
+    item.className = "hidden-item";
+
+    const text = document.createElement("span");
+    text.textContent = word;
+    item.appendChild(text);
+
+    if (!isReadOnlyView) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "small-btn";
+      btn.textContent = "恢复";
+      btn.addEventListener("click", () => unhideWord(word));
+      item.appendChild(btn);
+    }
+
+    hiddenListEl.appendChild(item);
+  }
+}
+
+function renderWeeklyTop(viewVocabMap) {
+  const vocab = viewVocabMap || currentEffectiveVocab();
+  weeklyTopListEl.innerHTML = "";
+
+  const topRows = rankRowsForVocab(vocab, 10, true);
+  const weekKey = getCurrentWeekKey();
+  const weeklyMap = currentWeekCountMap();
+  const weekWords = Object.keys(weeklyMap).length;
+
+  if (topRows.length === 0) {
+    weeklySummaryEl.textContent = `周次 ${weekKey} | 暂无记录`;
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "本周还没有点击记录。";
+    weeklyTopListEl.appendChild(empty);
+    return;
+  }
+
+  weeklySummaryEl.textContent = `周次 ${weekKey} | 本周已记录 ${weekWords} 个词`;
+
+  topRows.forEach((row, idx) => {
+    const line = document.createElement("div");
+    line.className = "weekly-row";
+
+    const rank = document.createElement("span");
+    rank.className = "rank";
+    rank.textContent = `#${idx + 1}`;
+
+    const word = document.createElement("span");
+    word.className = "word";
+    word.textContent = `${row.word} · ${shortText(row.definition, 28)}`;
+
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = row.weekCount > 0 ? `${row.weekCount}次` : `${row.totalCount}次(总)`;
+
+    line.appendChild(rank);
+    line.appendChild(word);
+    line.appendChild(count);
+    weeklyTopListEl.appendChild(line);
+  });
+}
+
+function latestThreeVersions() {
+  const latest = backups.slice(0, 3);
+  if (currentVersionMode !== "version" || !currentVersionId) return latest;
+  if (latest.some((item) => item.id === currentVersionId)) return latest;
+
+  const currentSnapshot = backups.find((item) => item.id === currentVersionId);
+  if (!currentSnapshot) return latest;
+
+  if (latest.length < 3) {
+    return [...latest, currentSnapshot];
+  }
+  return [latest[0], latest[1], currentSnapshot];
+}
+
+function snapshotToVocab(snapshot) {
+  const custom = sanitizeWordMap(snapshot && snapshot.custom_vocab);
+  const deleted = new Set(sanitizeWordList(snapshot && snapshot.deleted_vocab));
+  return buildEffectiveVocab(custom, deleted);
+}
+
+function snapshotDisplayText(snapshot) {
+  if (!snapshot) return "Unknown";
+  return `${formatTime(snapshot.at)} · ${snapshot.label || "manual"}`;
+}
+
+function getCurrentViewSnapshot() {
+  if (pageViewMode !== "version" || !selectedVersionId) return null;
+  return backups.find((item) => item.id === selectedVersionId) || null;
+}
+
+function getDisplayedVocabState() {
+  const snapshot = getCurrentViewSnapshot();
+  if (!snapshot) {
+    return {
+      mode: "live",
+      snapshot: null,
+      custom: sanitizeWordMap(customVocab),
+      deleted: new Set(sanitizeWordList(Array.from(deletedSet))),
+      effective: currentEffectiveVocab(),
+    };
+  }
+
+  const custom = sanitizeWordMap(snapshot.custom_vocab);
+  const deleted = new Set(sanitizeWordList(snapshot.deleted_vocab));
+  return {
+    mode: "version",
+    snapshot,
+    custom,
+    deleted,
+    effective: buildEffectiveVocab(custom, deleted),
+  };
+}
+
+function renderViewContext(viewState) {
+  if (viewState.mode === "version" && viewState.snapshot) {
+    vocabSectionTitleEl.textContent = `词库预览：${snapshotDisplayText(viewState.snapshot)}`;
+    editorTitleEl.textContent = "新增或修改词条（版本预览只读）";
+    return;
+  }
+
+  vocabSectionTitleEl.textContent = "当前生效词库";
+  if (!editingWord) {
+    editorTitleEl.textContent = "新增或修改词条";
+  }
+}
+
+function renderEditorReadonlyState(viewState) {
+  const readonly = viewState.mode === "version";
+  wordInput.disabled = readonly;
+  defInput.disabled = readonly;
+  saveBtn.disabled = readonly;
+  resetFormBtn.disabled = readonly;
+}
+
+function renderActiveVersionDisplay(list) {
+  if (currentVersionMode === "version" && currentVersionId) {
+    const currentSnapshot =
+      backups.find((item) => item.id === currentVersionId) ||
+      list.find((item) => item.id === currentVersionId) ||
+      null;
+    if (currentSnapshot) {
+      activeVersionDisplayEl.textContent = `当前生效：版本 ${snapshotDisplayText(currentSnapshot)}`;
+      return;
+    }
+    activeVersionDisplayEl.textContent = `当前生效：历史版本 (${currentVersionId.slice(0, 8)})`;
+    return;
+  }
+  activeVersionDisplayEl.textContent = "当前生效：实时词库（手动编辑/导入后的最新状态）";
+}
+
+function renderVersionPreview(list) {
+  versionPreviewListEl.innerHTML = "";
+
+  const selected = list.find((item) => item.id === selectedVersionId) || null;
+  if (!selected) {
+    versionPreviewTitleEl.textContent = "请选择一个版本";
+    setCurrentVersionBtn.textContent = "设置为当前版本";
+    setCurrentVersionBtn.disabled = true;
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "没有可预览的版本。";
+    versionPreviewListEl.appendChild(empty);
+    return;
+  }
+
+  const isCurrent = currentVersionMode === "version" && currentVersionId === selected.id;
+  setCurrentVersionBtn.textContent = isCurrent ? "已是当前版本" : "设置为当前版本";
+  setCurrentVersionBtn.disabled = isCurrent;
+  versionPreviewTitleEl.textContent =
+    pageViewMode === "version"
+      ? `版本 ${snapshotDisplayText(selected)}`
+      : `版本 ${snapshotDisplayText(selected)}（未应用到上方）`;
+
+  const vocab = snapshotToVocab(selected);
+  const topRows = rankRowsForVocab(vocab, 8, true);
+
+  if (topRows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "该版本暂无可排序词条。";
+    versionPreviewListEl.appendChild(empty);
+    return;
+  }
+
+  topRows.forEach((row, idx) => {
+    const line = document.createElement("div");
+    line.className = "version-preview-row";
+
+    const rank = document.createElement("span");
+    rank.className = "rank";
+    rank.textContent = `#${idx + 1}`;
+
+    const word = document.createElement("span");
+    word.className = "word";
+    word.textContent = `${row.word} · ${shortText(row.definition, 34)}`;
+
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = row.weekCount > 0 ? `${row.weekCount}次` : `${row.totalCount}次(总)`;
+
+    line.appendChild(rank);
+    line.appendChild(word);
+    line.appendChild(count);
+    versionPreviewListEl.appendChild(line);
+  });
+}
+
+function renderVersions() {
+  versionListEl.innerHTML = "";
+  const latestRaw = backups.slice(0, 3);
+  const list = latestThreeVersions();
+  renderActiveVersionDisplay(list);
+  viewLiveBtn.disabled = pageViewMode !== "version";
+
+  if (list.length === 0) {
+    versionSummaryEl.textContent = "暂无版本";
+    selectedVersionId = null;
+    pageViewMode = "live";
+    renderVersionPreview([]);
+    return;
+  }
+
+  const pinnedCurrent =
+    currentVersionMode === "version" &&
+    currentVersionId &&
+    !latestRaw.some((item) => item.id === currentVersionId) &&
+    list.some((item) => item.id === currentVersionId);
+  versionSummaryEl.textContent = pinnedCurrent
+    ? `已保存 ${backups.length} 个版本，展示最近 3 个（含当前生效）`
+    : `已保存 ${backups.length} 个版本，展示最近 3 个`;
+
+  if (!selectedVersionId || !list.some((item) => item.id === selectedVersionId)) {
+    if (currentVersionMode === "version" && currentVersionId && list.some((item) => item.id === currentVersionId)) {
+      selectedVersionId = currentVersionId;
+    } else {
+      selectedVersionId = list[0].id;
+    }
+  }
+
+  for (const snapshot of list) {
+    const isSelected = snapshot.id === selectedVersionId;
+    const isPreviewing = pageViewMode === "version" && isSelected;
+    const isCurrent = currentVersionMode === "version" && snapshot.id === currentVersionId;
+    const item = document.createElement("article");
+    item.className = `version-item${isPreviewing ? " active" : ""}${isCurrent ? " is-current" : ""}`;
+    item.addEventListener("click", () => {
+      selectedVersionId = snapshot.id;
+      pageViewMode = "version";
+      renderAll();
+    });
+
+    const head = document.createElement("div");
+    head.className = "version-item-head";
+
+    const title = document.createElement("p");
+    title.className = "time";
+    title.textContent = formatTime(snapshot.at);
+    head.appendChild(title);
+
+    if (isCurrent || isPreviewing) {
+      const badges = document.createElement("div");
+      badges.className = "version-badges";
+
+      if (isCurrent) {
+        const currentBadge = document.createElement("span");
+        currentBadge.className = "version-badge version-badge-current";
+        currentBadge.textContent = "当前生效";
+        badges.appendChild(currentBadge);
+      }
+
+      if (isPreviewing) {
+        const selectedBadge = document.createElement("span");
+        selectedBadge.className = "version-badge version-badge-preview";
+        selectedBadge.textContent = "预览中";
+        badges.appendChild(selectedBadge);
+      }
+
+      head.appendChild(badges);
+    }
+
+    item.appendChild(head);
+
+    const meta = document.createElement("p");
+    meta.className = "meta";
+    const customCount = Object.keys(snapshot.custom_vocab || {}).length;
+    const deletedCount = Array.isArray(snapshot.deleted_vocab) ? snapshot.deleted_vocab.length : 0;
+    meta.textContent = `自定义 ${customCount} | 隐藏 ${deletedCount}`;
+    item.appendChild(meta);
+
+    const label = document.createElement("p");
+    label.className = "label";
+    label.textContent = snapshot.label || "manual";
+    item.appendChild(label);
+
+    versionListEl.appendChild(item);
+  }
+
+  renderVersionPreview(list);
+}
+
+function renderSummary(viewState) {
+  const baseCount = Object.keys(baseVocab).length;
+  const customCount = Object.keys(viewState.custom || {}).length;
+  const activeCount = rows.length;
+  const totalQueries = rows.reduce((sum, row) => sum + (row.count || 0), 0);
+  const viewPrefix =
+    viewState.mode === "version" && viewState.snapshot
+      ? `预览版本 ${snapshotDisplayText(viewState.snapshot)} | `
+      : "";
+  summaryEl.textContent =
+    `${viewPrefix}生效 ${activeCount} | 基线 ${baseCount} | 自定义 ${customCount} | 查询总次数 ${totalQueries}`;
+}
+
+function renderAll() {
+  const viewState = getDisplayedVocabState();
+  isReadOnlyView = viewState.mode === "version";
+  mergeRows(viewState.custom, viewState.deleted);
+  renderViewContext(viewState);
+  renderEditorReadonlyState(viewState);
+  renderSummary(viewState);
+  renderTable();
+  renderHidden(viewState.deleted);
+  renderWeeklyTop(viewState.effective);
+  renderVersions();
+}
+
+function resetForm() {
+  editingWord = null;
+  if (pageViewMode === "version") {
+    editorTitleEl.textContent = "新增或修改词条（版本预览只读）";
+  } else {
+    editorTitleEl.textContent = "新增或修改词条";
+  }
+  wordInput.value = "";
+  defInput.value = "";
+}
+
+function startEdit(word, definition) {
+  if (pageViewMode === "version") {
+    setStatus("当前在版本预览模式，请先切回实时词库再编辑", true);
+    return;
+  }
+  editingWord = word;
+  editorTitleEl.textContent = `编辑词条: ${word}`;
+  wordInput.value = word;
+  defInput.value = definition;
+  wordInput.focus();
+}
+
+function ensureLiveEditable() {
+  if (pageViewMode !== "version") return true;
+  setStatus("当前在版本预览模式，请先点“切回实时词库”再编辑", true);
+  return false;
+}
+
+function saveState(nextCustom, nextDeleted, label) {
+  const cleanCustom = sanitizeWordMap(nextCustom);
+  const cleanDeleted = sanitizeWordList(Array.from(nextDeleted || []));
+
+  for (const w of Object.keys(cleanCustom)) {
+    const idx = cleanDeleted.indexOf(w);
+    if (idx >= 0) cleanDeleted.splice(idx, 1);
+  }
+
+  const snapshot = {
+    id: makeId(),
+    at: new Date().toISOString(),
+    label: label || "manual",
+    custom_vocab: sanitizeWordMap(customVocab),
+    deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+  };
+
+  const nextBackups = [snapshot, ...backups].slice(0, MAX_BACKUPS);
+  chrome.storage.local.set(
+    {
+      custom_vocab: cleanCustom,
+      deleted_vocab: cleanDeleted,
+      vocab_backups: nextBackups,
+      current_vocab_version_id: null,
+      current_vocab_mode: "live",
+    },
+    () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        setStatus(`保存失败: ${lastErr.message}`, true);
+        return;
+      }
+      customVocab = cleanCustom;
+      deletedSet = new Set(cleanDeleted);
+      backups = nextBackups;
+      currentVersionId = null;
+      currentVersionMode = "live";
+      pageViewMode = "live";
+      renderAll();
+      setStatus(`已保存 (${label || "manual"})`);
+    }
+  );
+}
+
+function saveFromForm(evt) {
+  evt.preventDefault();
+  if (!ensureLiveEditable()) return;
+
+  const key = normalizeWord(wordInput.value);
+  const def = defInput.value.trim();
+
+  if (!key) {
+    setStatus("单词格式不正确，只支持英文字母开头", true);
+    return;
+  }
+  if (!def) {
+    setStatus("释义不能为空", true);
+    return;
+  }
+
+  const nextCustom = { ...customVocab, [key]: def };
+  if (editingWord && editingWord !== key) {
+    delete nextCustom[editingWord];
+  }
+
+  const nextDeleted = new Set(deletedSet);
+  nextDeleted.delete(key);
+  saveState(nextCustom, nextDeleted, `upsert:${key}`);
+  resetForm();
+}
+
+function removeWord(word) {
+  if (!ensureLiveEditable()) return;
+  const hasBase = Object.prototype.hasOwnProperty.call(baseVocab, word);
+  const tip = hasBase
+    ? `删除 ${word} 后会隐藏该基线词，是否继续？`
+    : `确定删除自定义词 ${word}？`;
+  if (!window.confirm(tip)) return;
+
+  const nextCustom = { ...customVocab };
+  delete nextCustom[word];
+
+  const nextDeleted = new Set(deletedSet);
+  if (hasBase) nextDeleted.add(word);
+  else nextDeleted.delete(word);
+
+  saveState(nextCustom, nextDeleted, `delete:${word}`);
+}
+
+function restoreBaseline(word) {
+  if (!ensureLiveEditable()) return;
+  if (!window.confirm(`恢复 ${word} 到基线释义？`)) return;
+  const nextCustom = { ...customVocab };
+  delete nextCustom[word];
+
+  const nextDeleted = new Set(deletedSet);
+  nextDeleted.delete(word);
+  saveState(nextCustom, nextDeleted, `restore_base:${word}`);
+}
+
+function unhideWord(word) {
+  if (!ensureLiveEditable()) return;
+  const nextDeleted = new Set(deletedSet);
+  nextDeleted.delete(word);
+  saveState({ ...customVocab }, nextDeleted, `unhide:${word}`);
+}
+
+function setCurrentVersion() {
+  const snapshot = backups.find((item) => item.id === selectedVersionId);
+  if (!snapshot) {
+    setStatus("请选择有效版本", true);
+    return;
+  }
+
+  if (currentVersionMode === "version" && currentVersionId === snapshot.id) {
+    setStatus("该版本已在生效");
+    return;
+  }
+
+  if (!window.confirm(`将 ${formatTime(snapshot.at)} 设为当前词库版本？`)) return;
+
+  const currentSnapshot = {
+    id: makeId(),
+    at: new Date().toISOString(),
+    label: "before_set_current",
+    custom_vocab: sanitizeWordMap(customVocab),
+    deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+  };
+
+  const nextBackups = [currentSnapshot, ...backups].slice(0, MAX_BACKUPS);
+  const restoredCustom = sanitizeWordMap(snapshot.custom_vocab);
+  const restoredDeleted = sanitizeWordList(snapshot.deleted_vocab);
+
+  chrome.storage.local.set(
+    {
+      custom_vocab: restoredCustom,
+      deleted_vocab: restoredDeleted,
+      vocab_backups: nextBackups,
+      current_vocab_version_id: snapshot.id,
+      current_vocab_mode: "version",
+    },
+    () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        setStatus(`设置版本失败: ${lastErr.message}`, true);
+        return;
+      }
+      customVocab = restoredCustom;
+      deletedSet = new Set(restoredDeleted);
+      backups = nextBackups;
+      currentVersionId = snapshot.id;
+      currentVersionMode = "version";
+      selectedVersionId = snapshot.id;
+      renderAll();
+      setStatus(`已设置当前版本: ${formatTime(snapshot.at)}`);
+    }
+  );
+}
+
+function clearBackups() {
+  if (!window.confirm("清空所有版本记录？此操作不可撤销。")) return;
+  chrome.storage.local.set(
+    {
+      vocab_backups: [],
+      current_vocab_version_id: null,
+      current_vocab_mode: "live",
+    },
+    () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        setStatus(`清空失败: ${lastErr.message}`, true);
+        return;
+      }
+      backups = [];
+      currentVersionId = null;
+      currentVersionMode = "live";
+      selectedVersionId = null;
+      pageViewMode = "live";
+      renderAll();
+      setStatus("已清空版本记录");
+    }
+  );
+}
+
+function switchToLiveView() {
+  if (pageViewMode !== "version") return;
+  pageViewMode = "live";
+  resetForm();
+  renderAll();
+  setStatus("已切回实时词库");
+}
+
+function exportJson() {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    custom_vocab: sanitizeWordMap(customVocab),
+    deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  a.href = url;
+  a.download = `techwordlearn-vocab-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setStatus("已导出 JSON");
+}
+
+function parseImportPayload(obj) {
+  if (!obj || typeof obj !== "object") {
+    throw new Error("JSON 格式错误");
+  }
+
+  if (obj.custom_vocab || obj.deleted_vocab) {
+    return {
+      custom: sanitizeWordMap(obj.custom_vocab),
+      deleted: sanitizeWordList(obj.deleted_vocab),
+    };
+  }
+
+  return {
+    custom: sanitizeWordMap(obj),
+    deleted: [],
+  };
+}
+
+function importJson(file) {
+  if (!ensureLiveEditable()) return;
+  const reader = new FileReader();
+  reader.onerror = () => setStatus("读取文件失败", true);
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result || "{}"));
+      const incoming = parseImportPayload(parsed);
+
+      if (!window.confirm("导入会和当前词库合并，同名词条将被覆盖。继续？")) {
+        return;
+      }
+
+      const nextCustom = { ...customVocab, ...incoming.custom };
+      const nextDeleted = new Set([...deletedSet, ...incoming.deleted]);
+      for (const word of Object.keys(incoming.custom)) {
+        nextDeleted.delete(word);
+      }
+
+      saveState(nextCustom, nextDeleted, "import_json");
+    } catch (err) {
+      setStatus(`导入失败: ${err.message}`, true);
+    }
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+function loadStorage() {
+  chrome.storage.local.get(null, (items) => {
+    const lastErr = chrome.runtime.lastError;
+    if (lastErr) {
+      setStatus(`读取失败: ${lastErr.message}`, true);
+      return;
+    }
+
+    customVocab = sanitizeWordMap(items.custom_vocab);
+    wordCounts = extractWordCounts(items);
+    weeklyWordCounts = sanitizeWeeklyWordCounts(items.weekly_word_counts);
+    deletedSet = new Set(sanitizeWordList(items.deleted_vocab));
+
+    backups = Array.isArray(items.vocab_backups)
+      ? items.vocab_backups
+          .map((item) => ({
+            id: typeof item.id === "string" ? item.id : makeId(),
+            at: typeof item.at === "string" ? item.at : new Date().toISOString(),
+            label: typeof item.label === "string" ? item.label : "manual",
+            custom_vocab: sanitizeWordMap(item.custom_vocab),
+            deleted_vocab: sanitizeWordList(item.deleted_vocab),
+          }))
+          .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+          .slice(0, MAX_BACKUPS)
+      : [];
+
+    const loadedVersionId =
+      typeof items.current_vocab_version_id === "string" ? items.current_vocab_version_id : null;
+    const loadedMode = items.current_vocab_mode === "version" ? "version" : "live";
+    currentVersionMode = loadedMode === "version" && loadedVersionId ? "version" : "live";
+    currentVersionId = currentVersionMode === "version" ? loadedVersionId : null;
+
+    if (pageViewMode === "version") {
+      const stillExists = selectedVersionId && backups.some((item) => item.id === selectedVersionId);
+      if (!stillExists) {
+        pageViewMode = "live";
+      }
+    }
+
+    renderAll();
+    setStatus("已加载词库");
+  });
+}
+
+function loadBase() {
+  return fetch(chrome.runtime.getURL("vocabulary.json"))
+    .then((r) => r.json())
+    .then((json) => {
+      baseVocab = sanitizeWordMap(json);
+    })
+    .catch(() => {
+      baseVocab = {};
+    });
+}
+
+function bindEvents() {
+  searchInput.addEventListener("input", () => {
+    currentFilter = searchInput.value.trim().toLowerCase();
+    renderTable();
+  });
+
+  editForm.addEventListener("submit", saveFromForm);
+  resetFormBtn.addEventListener("click", resetForm);
+  document.getElementById("export-btn").addEventListener("click", exportJson);
+  document.getElementById("clear-backups-btn").addEventListener("click", clearBackups);
+  setCurrentVersionBtn.addEventListener("click", setCurrentVersion);
+  viewLiveBtn.addEventListener("click", switchToLiveView);
+
+  document.getElementById("import-input").addEventListener("change", (evt) => {
+    const file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    importJson(file);
+    evt.target.value = "";
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+
+    const hasCountChange = Object.entries(changes).some(([key, diff]) => {
+      const normalized = normalizeWord(key);
+      if (!normalized || normalized !== key) return false;
+      if (typeof diff.newValue === "number" && Number.isFinite(diff.newValue)) return true;
+      if (typeof diff.oldValue === "number" && Number.isFinite(diff.oldValue)) return true;
+      return false;
+    });
+
+    if (
+      changes.custom_vocab ||
+      changes.deleted_vocab ||
+      changes.vocab_backups ||
+      changes.current_vocab_version_id ||
+      changes.current_vocab_mode ||
+      changes.weekly_word_counts ||
+      hasCountChange
+    ) {
+      loadStorage();
+    }
+  });
+}
+
+function init() {
+  bindEvents();
+  Promise.resolve()
+    .then(loadBase)
+    .then(loadStorage)
+    .catch((err) => setStatus(`初始化失败: ${err.message}`, true));
+}
+
+init();

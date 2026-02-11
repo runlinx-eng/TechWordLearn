@@ -3,12 +3,16 @@
 // ============================================
 
 (() => {
-  // 防止重复注入导致重复绑定事件
-  if (window.__techwordlearn_loaded__) return;
-  window.__techwordlearn_loaded__ = true;
+  // 防止重复注入导致重复绑定事件（版本化标记，允许从旧脚本平滑升级）
+  const CONTENT_BOOTSTRAP_VERSION = 2;
+  if (window.__techwordlearn_loaded__ === CONTENT_BOOTSTRAP_VERSION) return;
+  window.__techwordlearn_loaded__ = CONTENT_BOOTSTRAP_VERSION;
   console.log("[TechWordLearn] content.js active v1.5");
 
   let vocabulary = {};
+  let baseVocab = {};
+  let customVocab = {};
+  let deletedWords = new Set();
   let masteredWords = new Set();
 
   const vocabUrl = (() => {
@@ -19,6 +23,7 @@
     }
   })();
   const SUFFIXES = ["ing", "ed", "es", "s", "d", "ly"];
+  const MAX_VOCAB_BACKUPS = 20;
 
   // --- Tooltip (single global) ---
   let tooltipEl = document.getElementById("neural-tooltip-container");
@@ -61,6 +66,8 @@
   function warnInvalidContextOnce() {
     if (warnedInvalidContext) return;
     warnedInvalidContext = true;
+    // 允许新版本脚本在同页重新注入并接管
+    window.__techwordlearn_loaded__ = 0;
     console.warn(
       "[TechWordLearn] Extension context invalidated. Refresh this page to reattach extension APIs."
     );
@@ -171,6 +178,7 @@
     if (!vocabUrl) return Promise.resolve({});
     return fetch(vocabUrl)
       .then((r) => r.json())
+      .then((json) => sanitizeWordMap(json))
       .catch(() => ({}));
   }
 
@@ -211,6 +219,126 @@
     // 只取第一个英文单词，过滤标点/奇怪空格
     const m = String(raw).match(/[A-Za-z][A-Za-z'-]*/);
     return m ? m[0].toLowerCase() : null;
+  }
+
+  function sanitizeWordMap(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof key !== "string" || typeof value !== "string") continue;
+      const normalized = normalizeWord(key);
+      const def = value.trim();
+      if (!normalized || !def) continue;
+      out[normalized] = def;
+    }
+    return out;
+  }
+
+  function sanitizeWordList(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const item of raw) {
+      const normalized = normalizeWord(item);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+    return out;
+  }
+
+  function sanitizeWordCountMap(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+      const normalized = normalizeWord(key);
+      if (!normalized || normalized !== key) continue;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+      out[key] = Math.floor(value);
+    }
+    return out;
+  }
+
+  function getCurrentWeekKey() {
+    const now = new Date();
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+  }
+
+  function sanitizeWeeklyWordCounts(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out = {};
+    for (const [weekKey, value] of Object.entries(raw)) {
+      if (!/^\d{4}-W\d{2}$/.test(weekKey)) continue;
+      out[weekKey] = sanitizeWordCountMap(value);
+    }
+    return out;
+  }
+
+  function pruneWeeklyWordCounts(weeklyMap, keep) {
+    const keys = Object.keys(weeklyMap).sort((a, b) => b.localeCompare(a));
+    const next = {};
+    for (let i = 0; i < keys.length && i < keep; i++) {
+      next[keys[i]] = weeklyMap[keys[i]];
+    }
+    return next;
+  }
+
+  function makeSnapshotId() {
+    return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function rebuildVocabulary() {
+    const merged = { ...baseVocab, ...customVocab };
+    deletedWords.forEach((word) => {
+      delete merged[word];
+    });
+    vocabulary = merged;
+  }
+
+  function saveVocabularyState(nextCustom, nextDeleted, reason, callback) {
+    safeStorageGet(["custom_vocab", "deleted_vocab", "vocab_backups"], (res) => {
+      const currentCustom = sanitizeWordMap(res.custom_vocab);
+      const currentDeleted = sanitizeWordList(res.deleted_vocab);
+      const currentBackups = Array.isArray(res.vocab_backups) ? res.vocab_backups : [];
+
+      const snapshot = {
+        id: makeSnapshotId(),
+        at: new Date().toISOString(),
+        label: reason || "manual",
+        custom_vocab: currentCustom,
+        deleted_vocab: currentDeleted,
+      };
+
+      const cleanCustom = sanitizeWordMap(nextCustom);
+      const cleanDeleted = sanitizeWordList(Array.from(nextDeleted || []));
+      for (const word of Object.keys(cleanCustom)) {
+        const idx = cleanDeleted.indexOf(word);
+        if (idx >= 0) cleanDeleted.splice(idx, 1);
+      }
+
+      const backups = [snapshot, ...currentBackups].slice(0, MAX_VOCAB_BACKUPS);
+
+      safeStorageSet(
+        {
+          custom_vocab: cleanCustom,
+          deleted_vocab: cleanDeleted,
+          vocab_backups: backups,
+          current_vocab_version_id: null,
+          current_vocab_mode: "live",
+        },
+        () => {
+          customVocab = cleanCustom;
+          deletedWords = new Set(cleanDeleted);
+          rebuildVocabulary();
+          if (callback) callback();
+        }
+      );
+    });
   }
 
   function isSkippableTextNode(node) {
@@ -348,9 +476,16 @@
   document.addEventListener("click", onClick, true);
 
   function updateWordCount(word) {
-    safeStorageGet([word], (result) => {
+    safeStorageGet([word, "weekly_word_counts"], (result) => {
       const newCount = (result[word] || 0) + 1;
-      safeStorageSet({ [word]: newCount });
+      const weekly = sanitizeWeeklyWordCounts(result.weekly_word_counts);
+      const weekKey = getCurrentWeekKey();
+      const oneWeek = sanitizeWordCountMap(weekly[weekKey]);
+      oneWeek[word] = (oneWeek[word] || 0) + 1;
+      weekly[weekKey] = oneWeek;
+      const prunedWeekly = pruneWeeklyWordCounts(weekly, 12);
+
+      safeStorageSet({ [word]: newCount, weekly_word_counts: prunedWeekly });
     });
   }
 
@@ -383,7 +518,7 @@
         // 某些页面会吞掉 speak；超时后用状态兜底判断
         setTimeout(() => {
           finish(window.speechSynthesis.speaking || window.speechSynthesis.pending);
-        }, 260);
+        }, 300);
       } catch (_) {
         resolve(false);
       }
@@ -391,10 +526,27 @@
   }
 
   function speakViaChromeTts(text) {
-    safeRuntimeSendMessage({ action: "speak_word", text }, (res) => {
-      if (!res || !res.ok) {
-        console.warn("[TechWordLearn] TTS fallback failed.");
-      }
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        resolve(Boolean(ok));
+      };
+
+      safeRuntimeSendMessage({ action: "speak_word", text }, (res) => {
+        if (!res || !res.ok) {
+          const reason = (res && res.error) || "runtime_failed";
+          console.warn(`[TWL_TTS] chrome fail reason=${reason}`);
+          finish(false);
+          return;
+        }
+        console.log(`[TWL_TTS] chrome ok event=${res.eventType || "unknown"}`);
+        finish(true);
+      });
+
+      // 防止 runtime 消息异常时卡住，给 web speech 回退机会
+      setTimeout(() => finish(false), 1200);
     });
   }
 
@@ -408,10 +560,22 @@
     __tts_lastSpeakAt = now;
     const reqId = ++__tts_requestSeq;
 
-    speakViaWebSpeech(phrase).then((ok) => {
+    // 一旦检测过 context invalidated，就强制走本地 Web Speech，避免 runtime_failed 后静音
+    if (warnedInvalidContext || !hasExtensionContext()) {
+      speakViaWebSpeech(phrase);
+      return;
+    }
+
+    // 优先走 chrome.tts；失败再回退 web speech
+    speakViaChromeTts(phrase).then((ok) => {
       // 有更新的点击请求时，忽略旧请求结果
       if (reqId !== __tts_requestSeq) return;
-      if (!ok) speakViaChromeTts(phrase);
+      if (!ok) {
+        speakViaWebSpeech(phrase).then((webOk) => {
+          if (reqId !== __tts_requestSeq) return;
+          if (!webOk) console.warn("[TechWordLearn] Both chrome.tts and Web Speech failed.");
+        });
+      }
     });
   }
 
@@ -663,18 +827,26 @@
   // --- Storage sync ---
   safeAddStorageOnChangedListener((changes, area) => {
     if (area !== "local") return;
+    let shouldRescan = false;
 
     if (changes.mastered_list) {
       masteredWords = new Set(changes.mastered_list.newValue || []);
-      scheduleRescan();
+      shouldRescan = true;
     }
 
     if (changes.custom_vocab) {
-      const nextCustom = changes.custom_vocab.newValue || {};
-      loadBaseVocabulary().then((baseVocab) => {
-        vocabulary = { ...baseVocab, ...nextCustom };
-        scheduleRescan();
-      });
+      customVocab = sanitizeWordMap(changes.custom_vocab.newValue || {});
+      shouldRescan = true;
+    }
+
+    if (changes.deleted_vocab) {
+      deletedWords = new Set(sanitizeWordList(changes.deleted_vocab.newValue || []));
+      shouldRescan = true;
+    }
+
+    if (shouldRescan) {
+      rebuildVocabulary();
+      scheduleRescan();
     }
   });
 
@@ -685,32 +857,32 @@
       if (!key) return;
 
       const def = prompt(`添加生词:\n"${key}"\n\n请输入中文释义:`, "自定义笔记");
-      if (!def || def.trim() === "") return;
+      const cleanDef = def ? def.trim() : "";
+      if (!cleanDef) return;
 
-      vocabulary[key] = def;
+      const nextCustom = { ...customVocab, [key]: cleanDef };
+      const nextDeleted = new Set(deletedWords);
+      nextDeleted.delete(key);
 
-      safeStorageGet(["custom_vocab"], (res) => {
-        const custom = res.custom_vocab || {};
-        custom[key] = def;
-
-        safeStorageSet({ custom_vocab: custom }, () => {
-          // 如果之前掌握过，撤销掌握
-          if (masteredWords.has(key)) {
-            masteredWords.delete(key);
-            safeStorageSet({ mastered_list: Array.from(masteredWords) });
-          }
-          scheduleRescan();
-        });
+      saveVocabularyState(nextCustom, nextDeleted, `context_add:${key}`, () => {
+        // 如果之前掌握过，撤销掌握
+        if (masteredWords.has(key)) {
+          masteredWords.delete(key);
+          safeStorageSet({ mastered_list: Array.from(masteredWords) });
+        }
+        scheduleRescan();
       });
     }
   });
 
   // --- Init ---
-  Promise.all([safeStorageGetPromise(["mastered_list", "custom_vocab"]), loadBaseVocabulary()])
-    .then(([st, baseVocab]) => {
+  Promise.all([safeStorageGetPromise(["mastered_list", "custom_vocab", "deleted_vocab"]), loadBaseVocabulary()])
+    .then(([st, loadedBaseVocab]) => {
+      baseVocab = loadedBaseVocab;
       masteredWords = new Set(st.mastered_list || []);
-      const custom = st.custom_vocab || {};
-      vocabulary = { ...baseVocab, ...custom };
+      customVocab = sanitizeWordMap(st.custom_vocab || {});
+      deletedWords = new Set(sanitizeWordList(st.deleted_vocab || []));
+      rebuildVocabulary();
 
       compileMatchers();
       highlightDocument();
