@@ -1,4 +1,11 @@
 const MAX_BACKUPS = 20;
+const CLOUD_SYNC_STATUS_LABELS = {
+  idle: "未启动",
+  syncing: "同步中",
+  ok: "已同步",
+  error: "同步失败",
+  disabled: "未启用",
+};
 
 let baseVocab = {};
 let customVocab = {};
@@ -14,6 +21,15 @@ let currentVersionId = null;
 let currentVersionMode = "live";
 let pageViewMode = "live";
 let isReadOnlyView = false;
+let cloudSyncEnabled = false;
+let cloudSyncEndpoint = "";
+let cloudSyncToken = "";
+let cloudSyncDeviceId = "";
+let cloudSyncStatus = "idle";
+let cloudSyncLastSyncedAt = "";
+let cloudSyncLastError = "";
+let cloudSyncLastReason = "";
+let cloudSyncLastAttemptAt = "";
 
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("summary");
@@ -22,6 +38,7 @@ const weeklySummaryEl = document.getElementById("weekly-summary");
 const versionSummaryEl = document.getElementById("version-summary");
 const activeVersionDisplayEl = document.getElementById("active-version-display");
 const vocabSectionTitleEl = document.getElementById("vocab-section-title");
+const cloudSyncSummaryEl = document.getElementById("cloud-sync-summary");
 
 const searchInput = document.getElementById("search-input");
 const tbody = document.getElementById("vocab-tbody");
@@ -39,10 +56,32 @@ const wordInput = document.getElementById("word-input");
 const defInput = document.getElementById("def-input");
 const saveBtn = document.getElementById("save-btn");
 const resetFormBtn = document.getElementById("reset-form-btn");
+const cloudSyncEnabledInput = document.getElementById("cloud-sync-enabled");
+const cloudSyncEndpointInput = document.getElementById("cloud-sync-endpoint");
+const cloudSyncTokenInput = document.getElementById("cloud-sync-token");
+const saveCloudSyncBtn = document.getElementById("save-cloud-sync-btn");
+const syncCloudNowBtn = document.getElementById("sync-cloud-now-btn");
 
 function normalizeWord(raw) {
   const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
   return m ? m[0].toLowerCase() : null;
+}
+
+function sanitizeCloudEndpoint(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    url.hash = "";
+    return url.toString();
+  } catch (_) {
+    return "";
+  }
+}
+
+function sanitizeCloudToken(raw) {
+  return typeof raw === "string" ? raw.trim() : "";
 }
 
 function sanitizeWordMap(raw) {
@@ -140,6 +179,48 @@ function formatTime(iso) {
 function shortText(text, maxLen) {
   const s = String(text || "");
   return s.length > maxLen ? `${s.slice(0, maxLen)}...` : s;
+}
+
+function cloudSyncReadyFromInputs() {
+  return cloudSyncEnabledInput.checked && Boolean(sanitizeCloudEndpoint(cloudSyncEndpointInput.value));
+}
+
+function updateCloudSyncActionState() {
+  syncCloudNowBtn.disabled = !cloudSyncReadyFromInputs();
+}
+
+function renderCloudSyncPanel() {
+  cloudSyncEnabledInput.checked = cloudSyncEnabled;
+  cloudSyncEndpointInput.value = cloudSyncEndpoint;
+  cloudSyncTokenInput.value = cloudSyncToken;
+  updateCloudSyncActionState();
+
+  const statusLabel = CLOUD_SYNC_STATUS_LABELS[cloudSyncStatus] || CLOUD_SYNC_STATUS_LABELS.idle;
+  const endpointHost = sanitizeCloudEndpoint(cloudSyncEndpoint)
+    ? new URL(sanitizeCloudEndpoint(cloudSyncEndpoint)).host
+    : "未配置端点";
+
+  if (!cloudSyncEnabled) {
+    cloudSyncSummaryEl.textContent = "当前关闭。保存同一个 endpoint/token 到多台设备后即可共享词库。";
+    return;
+  }
+
+  const parts = [`状态: ${statusLabel}`, `端点: ${endpointHost}`];
+  if (cloudSyncLastSyncedAt) {
+    parts.push(`最近成功: ${formatTime(cloudSyncLastSyncedAt)}`);
+  } else if (cloudSyncLastAttemptAt) {
+    parts.push(`最近尝试: ${formatTime(cloudSyncLastAttemptAt)}`);
+  }
+  if (cloudSyncLastReason) {
+    parts.push(`触发: ${cloudSyncLastReason}`);
+  }
+  if (cloudSyncLastError) {
+    parts.push(`错误: ${cloudSyncLastError}`);
+  }
+  if (cloudSyncDeviceId) {
+    parts.push(`设备ID: ${cloudSyncDeviceId.slice(0, 8)}`);
+  }
+  cloudSyncSummaryEl.textContent = parts.join(" | ");
 }
 
 function buildEffectiveVocab(custom, deletedWordSet) {
@@ -925,7 +1006,81 @@ function importJson(file) {
   reader.readAsText(file, "utf-8");
 }
 
-function loadStorage() {
+function saveCloudSyncSettings() {
+  const enabled = Boolean(cloudSyncEnabledInput.checked);
+  const endpointRaw = cloudSyncEndpointInput.value.trim();
+  const endpoint = endpointRaw ? sanitizeCloudEndpoint(endpointRaw) : "";
+  const token = sanitizeCloudToken(cloudSyncTokenInput.value);
+
+  if (enabled && !endpoint) {
+    setStatus("启用云同步前，请先填写有效的 http/https 同步端点", true);
+    return;
+  }
+  if (endpointRaw && !endpoint) {
+    setStatus("同步端点格式不正确，只支持 http/https URL", true);
+    return;
+  }
+
+  saveCloudSyncBtn.disabled = true;
+  chrome.storage.local.set(
+    {
+      cloud_sync_enabled: enabled,
+      cloud_sync_endpoint: endpoint,
+      cloud_sync_token: token,
+    },
+    () => {
+      saveCloudSyncBtn.disabled = false;
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        setStatus(`保存云同步配置失败: ${lastErr.message}`, true);
+        return;
+      }
+
+      cloudSyncEnabled = enabled;
+      cloudSyncEndpoint = endpoint;
+      cloudSyncToken = token;
+      renderCloudSyncPanel();
+      setStatus(enabled ? "云同步配置已保存，可点击“立即同步”验证连接" : "已保存云同步配置（当前关闭）");
+    }
+  );
+}
+
+function syncCloudNow() {
+  if (!cloudSyncEnabledInput.checked) {
+    setStatus("请先启用云同步", true);
+    return;
+  }
+
+  const endpoint = sanitizeCloudEndpoint(cloudSyncEndpointInput.value);
+  if (!endpoint) {
+    setStatus("请先填写有效的同步端点", true);
+    return;
+  }
+
+  syncCloudNowBtn.disabled = true;
+  setStatus("正在执行云端同步...");
+  chrome.runtime.sendMessage({ action: "sync_cloud_now" }, (res) => {
+    updateCloudSyncActionState();
+    const lastErr = chrome.runtime.lastError;
+    if (lastErr) {
+      setStatus(`云同步请求失败: ${lastErr.message}`, true);
+      return;
+    }
+
+    if (!res || res.ok === false) {
+      setStatus(`云同步失败: ${(res && res.error) || "unknown_error"}`, true);
+      return;
+    }
+
+    if (res.skipped === "disabled") {
+      setStatus("云同步未启用", true);
+      return;
+    }
+    setStatus(res.changed ? "云同步完成，已合并最新词库" : "云同步完成，没有新增变更");
+  });
+}
+
+function loadStorage(showStatus = true) {
   chrome.storage.local.get(null, (items) => {
     const lastErr = chrome.runtime.lastError;
     if (lastErr) {
@@ -956,6 +1111,17 @@ function loadStorage() {
     const loadedMode = items.current_vocab_mode === "version" ? "version" : "live";
     currentVersionMode = loadedMode === "version" && loadedVersionId ? "version" : "live";
     currentVersionId = currentVersionMode === "version" ? loadedVersionId : null;
+    cloudSyncEnabled = Boolean(items.cloud_sync_enabled);
+    cloudSyncEndpoint = typeof items.cloud_sync_endpoint === "string" ? items.cloud_sync_endpoint : "";
+    cloudSyncToken = typeof items.cloud_sync_token === "string" ? items.cloud_sync_token : "";
+    cloudSyncDeviceId = typeof items.cloud_sync_device_id === "string" ? items.cloud_sync_device_id : "";
+    cloudSyncStatus = typeof items.cloud_sync_status === "string" ? items.cloud_sync_status : "idle";
+    cloudSyncLastSyncedAt =
+      typeof items.cloud_sync_last_synced_at === "string" ? items.cloud_sync_last_synced_at : "";
+    cloudSyncLastError = typeof items.cloud_sync_last_error === "string" ? items.cloud_sync_last_error : "";
+    cloudSyncLastReason = typeof items.cloud_sync_last_reason === "string" ? items.cloud_sync_last_reason : "";
+    cloudSyncLastAttemptAt =
+      typeof items.cloud_sync_last_attempt_at === "string" ? items.cloud_sync_last_attempt_at : "";
 
     if (pageViewMode === "version") {
       const stillExists = selectedVersionId && backups.some((item) => item.id === selectedVersionId);
@@ -965,7 +1131,10 @@ function loadStorage() {
     }
 
     renderAll();
-    setStatus("已加载词库");
+    renderCloudSyncPanel();
+    if (showStatus) {
+      setStatus("已加载词库");
+    }
   });
 }
 
@@ -992,6 +1161,10 @@ function bindEvents() {
   document.getElementById("clear-backups-btn").addEventListener("click", clearBackups);
   setCurrentVersionBtn.addEventListener("click", setCurrentVersion);
   viewLiveBtn.addEventListener("click", switchToLiveView);
+  saveCloudSyncBtn.addEventListener("click", saveCloudSyncSettings);
+  syncCloudNowBtn.addEventListener("click", syncCloudNow);
+  cloudSyncEnabledInput.addEventListener("change", updateCloudSyncActionState);
+  cloudSyncEndpointInput.addEventListener("input", updateCloudSyncActionState);
 
   document.getElementById("import-input").addEventListener("change", (evt) => {
     const file = evt.target.files && evt.target.files[0];
@@ -1018,9 +1191,18 @@ function bindEvents() {
       changes.current_vocab_version_id ||
       changes.current_vocab_mode ||
       changes.weekly_word_counts ||
+      changes.cloud_sync_enabled ||
+      changes.cloud_sync_endpoint ||
+      changes.cloud_sync_token ||
+      changes.cloud_sync_device_id ||
+      changes.cloud_sync_status ||
+      changes.cloud_sync_last_synced_at ||
+      changes.cloud_sync_last_error ||
+      changes.cloud_sync_last_reason ||
+      changes.cloud_sync_last_attempt_at ||
       hasCountChange
     ) {
-      loadStorage();
+      loadStorage(false);
     }
   });
 }
@@ -1029,7 +1211,7 @@ function init() {
   bindEvents();
   Promise.resolve()
     .then(loadBase)
-    .then(loadStorage)
+    .then(() => loadStorage(true))
     .catch((err) => setStatus(`初始化失败: ${err.message}`, true));
 }
 

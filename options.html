@@ -25,6 +25,45 @@
       </label>
     </section>
 
+    <section class="panel cloud-panel">
+      <div class="cloud-header">
+        <div>
+          <h2>云端同步</h2>
+          <p class="summary">把自定义词库同步到你自己的云端接口，跨浏览器和跨设备共用。</p>
+        </div>
+        <label class="cloud-toggle">
+          <input id="cloud-sync-enabled" type="checkbox" />
+          <span>启用</span>
+        </label>
+      </div>
+      <div class="cloud-grid">
+        <div class="field-row">
+          <label for="cloud-sync-endpoint">同步端点</label>
+          <input
+            id="cloud-sync-endpoint"
+            type="url"
+            inputmode="url"
+            placeholder="https://your-domain.example/sync"
+          />
+        </div>
+        <div class="field-row">
+          <label for="cloud-sync-token">Bearer Token（建议填写）</label>
+          <input
+            id="cloud-sync-token"
+            type="password"
+            autocomplete="off"
+            placeholder="twl_prod_xxx"
+          />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="save-cloud-sync-btn" class="btn primary" type="button">保存云同步配置</button>
+        <button id="sync-cloud-now-btn" class="btn secondary" type="button">立即同步</button>
+      </div>
+      <p id="cloud-sync-summary" class="summary">未启用</p>
+      <p class="hint">协议是一个简单的 JSON `/sync` 接口，仓库里已附带服务端脚本示例。</p>
+    </section>
+
     <section class="panel weekly-panel">
       <h2>本周高频 Top 10</h2>
       <p id="weekly-summary" class="summary">Loading...</p>

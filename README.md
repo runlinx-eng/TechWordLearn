@@ -17,7 +17,9 @@ TechWordLearn 是一个技术英语沉浸学习扩展，支持：
 - `options.html` / `options.js` / `options.css`: 词库管理页面
 - `vocabulary.json`: 基线词库
 - `scripts/vocab-version.js`: 周/月词库版本脚本
+- `scripts/vocab-cloud-sync-server.py`: 云端词库同步服务示例
 - `docs/vocabulary-versioning-workflow.md`: 版本管理流程文档
+- `docs/cloud-vocab-sync.md`: 云同步接入说明
 
 ## 本地运行（给自己/他人）
 
@@ -26,6 +28,32 @@ TechWordLearn 是一个技术英语沉浸学习扩展，支持：
 3. 打开右上角“开发者模式”。
 4. 点击“加载已解压的扩展程序”，选择项目根目录（本目录）。
 5. 固定扩展图标，打开扩展弹窗或“词库管理”页面。
+
+## 云端词库同步（跨设备 / 跨浏览器）
+
+如果你要把词库放到公网统一同步，而不想被 `chrome.storage.sync` 的浏览器生态限制，可以：
+
+1. 部署仓库里的 `scripts/vocab-cloud-sync-server.py`
+2. 在“词库管理”页面填写云同步端点和 Bearer Token
+3. 点击“立即同步”验证
+
+详细步骤见：`docs/cloud-vocab-sync.md`
+
+## Chrome + Atlas 自动词库同步（同机）
+
+默认的 `chrome.storage.sync` 只在同一个浏览器生态内同步。
+如果你希望 **Chrome 与 ChatGPT Atlas** 在同一台 Mac 上自动共享词库，请启动本地桥接服务：
+
+```bash
+# 启动并注册为 launchd 常驻服务
+bash scripts/setup-vocab-sync-bridge.sh start
+
+# 停止服务
+bash scripts/setup-vocab-sync-bridge.sh stop
+```
+
+桥接服务会监听 `http://127.0.0.1:43110/sync`，扩展后台会定时把
+`custom_vocab / deleted_vocab / vocab_sync_updated_at` 与桥接状态互相合并。
 
 ## 给别人分享（两种方式）
 
@@ -39,7 +67,10 @@ TechWordLearn 是一个技术英语沉浸学习扩展，支持：
 ## 词库与版本说明
 
 - 基线词库文件：`vocabulary.json`
-- 用户运行时词库：保存在 `chrome.storage.local`
+- 用户运行时词库：
+  - 本地实时存储：`chrome.storage.local`
+  - 跨设备词库同步：`chrome.storage.sync`（同步 `custom_vocab` / `deleted_vocab`）
+  - 自建云端同步：配置后通过 HTTP `/sync` 接口合并 `custom_vocab` / `deleted_vocab`
   - `custom_vocab`
   - `deleted_vocab`
   - `vocab_backups`

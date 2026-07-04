@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Tech Word Immersion",
-  "version": "1.5",
+  "version": "1.12",
   "description": "Highlight technical English words, track progress, and add custom vocabulary.",
-  "permissions": ["storage", "contextMenus", "tts", "scripting", "tabs"],
+  "permissions": ["storage", "contextMenus", "scripting", "tabs", "alarms"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },

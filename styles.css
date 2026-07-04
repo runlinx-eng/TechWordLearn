@@ -1,14 +1,16 @@
 .tech-word-highlight {
-  background-color: #fff700;
-  color: #000;
+  background-color: #fff700 !important;
+  color: #000 !important;
   cursor: pointer;
-  border-bottom: 2px solid #ff9900;
+  border-bottom: 2px solid #ff9900 !important;
   position: relative;
   transition: all 0.2s;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .tech-word-highlight:active {
-  background-color: #00e676;
+  background-color: #00e676 !important;
 }
 
 /* 全局唯一的悬浮提示框 */

@@ -71,8 +71,45 @@ h1 {
   align-items: center;
 }
 
+.cloud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cloud-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.cloud-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cloud-toggle input {
+  accent-color: var(--primary);
+}
+
+#cloud-sync-summary {
+  margin-top: 10px;
+}
+
 input[type="search"],
 input[type="text"],
+input[type="url"],
+input[type="password"],
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -446,6 +483,15 @@ td .row-actions {
 
   .toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .cloud-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cloud-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   th:nth-child(4),

@@ -48,6 +48,57 @@ function renderStats() {
   });
 }
 
+function isInjectableUrl(url) {
+  return /^(https?:\/\/|file:\/\/)/i.test(String(url || ""));
+}
+
+function readInjectDiag(callback) {
+  chrome.storage.local.get(["__twl_inject_diag"], (items) => {
+    const diag = items && items.__twl_inject_diag;
+    if (!diag || typeof diag !== "object") {
+      callback("");
+      return;
+    }
+    const stage = diag.stage ? String(diag.stage) : "unknown";
+    const msg = diag.message ? `, ${String(diag.message)}` : "";
+    callback(` | Last: ${stage}${msg}`);
+  });
+}
+
+function renderDiagnosis() {
+  const diagDiv = document.getElementById("diag");
+  if (!diagDiv) return;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    if (!tab) {
+      diagDiv.textContent = "Page: (none) | Injection: no active tab";
+      return;
+    }
+
+    const url = String(tab.url || "");
+    const shortUrl = url.length > 80 ? `${url.slice(0, 77)}...` : url;
+    if (!isInjectableUrl(url)) {
+      diagDiv.textContent = `Page: ${shortUrl} | Injection: blocked by scheme`;
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, { action: "twl_ping" }, (res) => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        readInjectDiag((extra) => {
+          diagDiv.textContent = `Page: ${shortUrl} | Injection: no content script (${lastErr.message})${extra}`;
+        });
+        return;
+      }
+
+      const ver = res && res.version ? res.version : "unknown";
+      const vocabCount = typeof (res && res.vocabSize) === "number" ? res.vocabSize : "n/a";
+      diagDiv.textContent = `Page: ${shortUrl} | Injection: active v${ver} | Vocab: ${vocabCount}`;
+    });
+  });
+}
+
 function sanitizeCountMap(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out = {};
@@ -78,6 +129,10 @@ function openManager() {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("open-vocab-manager").addEventListener("click", openManager);
-  document.getElementById("refresh-stats").addEventListener("click", renderStats);
+  document.getElementById("refresh-stats").addEventListener("click", () => {
+    renderStats();
+    renderDiagnosis();
+  });
+  renderDiagnosis();
   renderStats();
 });

@@ -4,10 +4,10 @@
 
 (() => {
   // 防止重复注入导致重复绑定事件（版本化标记，允许从旧脚本平滑升级）
-  const CONTENT_BOOTSTRAP_VERSION = 2;
+  const CONTENT_BOOTSTRAP_VERSION = 3;
   if (window.__techwordlearn_loaded__ === CONTENT_BOOTSTRAP_VERSION) return;
   window.__techwordlearn_loaded__ = CONTENT_BOOTSTRAP_VERSION;
-  console.log("[TechWordLearn] content.js active v1.5");
+  console.log("[TechWordLearn] content.js active v1.12");
 
   let vocabulary = {};
   let baseVocab = {};
@@ -26,15 +26,13 @@
   const MAX_VOCAB_BACKUPS = 20;
 
   // --- Tooltip (single global) ---
-  let tooltipEl = document.getElementById("neural-tooltip-container");
-  if (!tooltipEl) {
-    tooltipEl = document.createElement("div");
-    tooltipEl.id = "neural-tooltip-container";
-    document.body.appendChild(tooltipEl);
-  }
+  let tooltipEl = null;
 
   let compiled = null; // { testRegex, replaceRegex, usesBoundaryCapture }
   let scanTimer = null;
+  const observedRoots = new WeakSet();
+  const rootObservers = [];
+  let rootMutationHandler = null;
 
   let hoverSeq = 0; // 防止异步 storage 回调串台
   let warnedInvalidContext = false;
@@ -44,6 +42,21 @@
   let __tts_voice = null;
   let __tts_lastSpeakAt = 0;
   let __tts_requestSeq = 0;
+
+  function ensureTooltipEl() {
+    if (tooltipEl && tooltipEl.isConnected) return tooltipEl;
+
+    tooltipEl = document.getElementById("neural-tooltip-container");
+    if (tooltipEl) return tooltipEl;
+
+    tooltipEl = document.createElement("div");
+    tooltipEl.id = "neural-tooltip-container";
+    const mountTarget = document.body || document.documentElement;
+    if (mountTarget) mountTarget.appendChild(tooltipEl);
+    return tooltipEl;
+  }
+
+  ensureTooltipEl();
 
   function isContextInvalidated(errOrMsg) {
     const msg =
@@ -259,6 +272,65 @@
     return out;
   }
 
+  function collectScanRoots() {
+    const roots = [];
+    const seen = new Set();
+
+    const addRoot = (root) => {
+      if (!root || seen.has(root)) return;
+      seen.add(root);
+      roots.push(root);
+    };
+
+    if (!document.body) return roots;
+    addRoot(document.body);
+
+    const stack = [document.body];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || !node.children) continue;
+
+      if (node.shadowRoot) {
+        addRoot(node.shadowRoot);
+        const shadowChildren = node.shadowRoot.children;
+        for (let i = shadowChildren.length - 1; i >= 0; i--) {
+          stack.push(shadowChildren[i]);
+        }
+      }
+
+      const children = node.children;
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push(children[i]);
+      }
+    }
+
+    return roots;
+  }
+
+  function containsOpenShadowRoot(node) {
+    if (!node) return false;
+    if (node.nodeType === Node.ELEMENT_NODE && node.shadowRoot) return true;
+    if (!node.querySelectorAll) return false;
+
+    const descendants = node.querySelectorAll("*");
+    for (const el of descendants) {
+      if (el.shadowRoot) return true;
+    }
+    return false;
+  }
+
+  function ensureRootObservers() {
+    if (!rootMutationHandler) return;
+    const roots = collectScanRoots();
+    for (const root of roots) {
+      if (!root || observedRoots.has(root)) continue;
+      const obs = new MutationObserver(rootMutationHandler);
+      obs.observe(root, { childList: true, subtree: true, characterData: true });
+      observedRoots.add(root);
+      rootObservers.push(obs);
+    }
+  }
+
   function getCurrentWeekKey() {
     const now = new Date();
     const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
@@ -408,12 +480,35 @@
   }
 
   function hideTooltip() {
-    tooltipEl.classList.remove("active");
+    const tip = ensureTooltipEl();
+    if (tip) tip.classList.remove("active");
+  }
+
+  function findHighlightFromNode(node) {
+    if (!node || node === document || node === window) return null;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.classList && node.classList.contains("tech-word-highlight")) return node;
+      if (typeof node.closest === "function") return node.closest(".tech-word-highlight");
+    }
+    return null;
+  }
+
+  function findHighlightFromEvent(e) {
+    const direct = findHighlightFromNode(e && e.target);
+    if (direct) return direct;
+
+    if (!e || typeof e.composedPath !== "function") return null;
+    const path = e.composedPath();
+    for (const node of path) {
+      const hit = findHighlightFromNode(node);
+      if (hit) return hit;
+    }
+    return null;
   }
 
   // --- Hover + Click delegation (works even if highlight wraps <i>/<code> etc) ---
   function onMouseOver(e) {
-    const span = e.target && e.target.closest ? e.target.closest(".tech-word-highlight") : null;
+    const span = findHighlightFromEvent(e);
     if (!span) return;
 
     const key = span.dataset.key;
@@ -426,24 +521,23 @@
       if (my !== hoverSeq) return;
 
       const count = res[key] || 0;
-      tooltipEl.innerText = `${def}\n[Seen: ${count}]`;
+      const tip = ensureTooltipEl();
+      if (!tip) return;
+      tip.innerText = `${def}\n[Seen: ${count}]`;
 
       const r = span.getBoundingClientRect();
-      tooltipEl.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 260))}px`;
-      tooltipEl.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 60)}px`;
-      tooltipEl.classList.add("active");
+      tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 260))}px`;
+      tip.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 60)}px`;
+      tip.classList.add("active");
     });
   }
 
   function onMouseOut(e) {
     // 只在“离开高亮 span 本体”时隐藏，避免 document 级 mouseout 冒泡误伤
-    const fromSpan = e.target && e.target.closest ? e.target.closest(".tech-word-highlight") : null;
+    const fromSpan = findHighlightFromEvent(e);
     if (!fromSpan) return;
 
-    const toSpan =
-      e.relatedTarget && e.relatedTarget.closest
-        ? e.relatedTarget.closest(".tech-word-highlight")
-        : null;
+    const toSpan = findHighlightFromNode(e.relatedTarget);
 
     // 从一个高亮移到另一个高亮：不隐藏（mouseover 会更新 tooltip）
     if (toSpan) return;
@@ -452,7 +546,7 @@
   }
 
   function onClick(e) {
-    const span = e.target && e.target.closest ? e.target.closest(".tech-word-highlight") : null;
+    const span = findHighlightFromEvent(e);
     if (!span) return;
 
     const key = span.dataset.key;
@@ -788,24 +882,31 @@
   }
 
   function highlightDocument() {
-    if (!compiled) return;
+    if (!compiled || !document.body) return;
 
-    // pass1: 单节点快扫
-    highlightWithinTextNodes(document.body);
+    const roots = collectScanRoots();
+    for (const root of roots) {
+      // pass1: 单节点快扫
+      highlightWithinTextNodes(root);
+    }
 
-    // pass2: 跨节点扫（斜体/代码拆分）
-    const blocks = document.querySelectorAll(BLOCK_SELECTOR);
-    for (const b of blocks) {
-      // 跳过可编辑
-      if (b.isContentEditable) continue;
-      if (b.closest && b.closest("#neural-tooltip-container")) continue;
-      highlightAcrossNodesInBlock(b);
+    for (const root of roots) {
+      if (!root.querySelectorAll) continue;
+      // pass2: 跨节点扫（斜体/代码拆分）
+      const blocks = root.querySelectorAll(BLOCK_SELECTOR);
+      for (const b of blocks) {
+        // 跳过可编辑
+        if (b.isContentEditable) continue;
+        if (b.closest && b.closest("#neural-tooltip-container")) continue;
+        highlightAcrossNodesInBlock(b);
+      }
     }
   }
 
   function scheduleRescan() {
     if (scanTimer) clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
+      ensureRootObservers();
       compileMatchers();
       highlightDocument();
     }, 400);
@@ -813,15 +914,38 @@
 
   // --- Observe DOM changes (SPA / infinite scroll) ---
   function observeChanges() {
-    const obs = new MutationObserver((mutations) => {
+    rootMutationHandler = (mutations) => {
+      let shouldRescan = false;
+      let shouldRefreshRoots = false;
       for (const m of mutations) {
+        if (m.type === "characterData") {
+          shouldRescan = true;
+          continue;
+        }
         if (m.addedNodes && m.addedNodes.length > 0) {
-          scheduleRescan();
-          break;
+          shouldRescan = true;
+          for (const added of m.addedNodes) {
+            if (containsOpenShadowRoot(added)) {
+              shouldRefreshRoots = true;
+              break;
+            }
+          }
+          if (shouldRefreshRoots) break;
         }
       }
+      if (shouldRefreshRoots) ensureRootObservers();
+      if (shouldRescan) scheduleRescan();
+    };
+
+    ensureRootObservers();
+
+    // 某些 SPA 会延迟挂载/替换根节点，补三次启动兜底
+    [700, 1800, 4000].forEach((ms) => {
+      setTimeout(() => {
+        ensureRootObservers();
+        scheduleRescan();
+      }, ms);
     });
-    obs.observe(document.body, { childList: true, subtree: true });
   }
 
   // --- Storage sync ---
@@ -851,7 +975,16 @@
   });
 
   // --- Context menu add word message ---
-  safeAddRuntimeOnMessageListener((req) => {
+  safeAddRuntimeOnMessageListener((req, _sender, sendResponse) => {
+    if (req && req.action === "twl_ping") {
+      sendResponse({
+        ok: true,
+        version: "1.12",
+        vocabSize: Object.keys(vocabulary || {}).length,
+      });
+      return;
+    }
+
     if (req && req.action === "prompt_for_definition") {
       const key = normalizeWord(req.word);
       if (!key) return;

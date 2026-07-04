@@ -11,6 +11,9 @@ build/
 
 # temporary
 *_tree.txt
+__pycache__/
+*.pyc
+*.pyo
 
 # release / share artifacts
 release/
