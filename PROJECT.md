@@ -1,172 +1,96 @@
 # Project: TechWordLearn
 
-## Project Goal
+## Position
 
-TechWordLearn is a technical English immersion learning project centered on a Chrome Extension. It highlights technical English words on pages, provides hover definitions, supports pronunciation, tracks lookup counts, manages custom vocabulary, and supports vocabulary versioning and sync workflows.
+TechWordLearn is a public, open-source technical-English immersion project centered on a Chrome extension.
 
-The repository also includes a Swift/macOS companion package and local / cloud vocabulary sync helpers.
+It helps a user learn technical vocabulary while reading real webpages by highlighting terms, showing definitions, providing pronunciation, tracking lookups, and maintaining a personal vocabulary.
 
-## Current Stage
+## Current status
 
-prototype / personal tool / non-production repo
+```yaml
+status: working_open_source_prototype
+primary_surface: Chrome Extension
+runtime_openai_api: none
+public_repository: https://github.com/runlinx-eng/TechWordLearn
+distribution:
+  chrome_web_store: false
+  hosted_saas: false
+  local_unpacked_install: true
+```
 
-This classification is provisional and must be confirmed by the human owner before formal onboarding.
+This status does not claim production readiness or Chrome Web Store approval. The repository is suitable for local installation, demonstration, inspection, and continued iteration.
 
-## Business / Personal Context
+## Product scope
 
-Personal learning and vocabulary management tool. It should support safe iterative improvement without exposing browser secrets, cloud sync tokens, local vault data, or production systems.
+Current product capabilities include:
 
-## Allowed Read Scope
+- webpage term highlighting;
+- hover definitions;
+- pronunciation;
+- total and weekly lookup statistics;
+- custom vocabulary management;
+- hidden and restored terms;
+- vocabulary backups and repository snapshots;
+- JSON import/export;
+- Chrome profile sync;
+- optional self-hosted cloud sync;
+- optional same-machine local bridge.
 
-Allowed after human approval:
-- `README.md`
-- `LICENSE`
-- `manifest.json`
-- `.gitignore`
-- `docs/`
-- non-sensitive JavaScript source files such as `background.js`, `content.js`, `popup.js`, `options.js`
-- non-sensitive HTML / CSS files such as `popup.html`, `options.html`, `styles.css`, `options.css`
-- non-sensitive script files under `scripts/`
-- `vocabulary.json` and `vocab_versions/` only when the task explicitly concerns vocabulary behavior or docs
-- `macos-word-entropy/Package.swift`
-- non-sensitive Swift source and tests under `macos-word-entropy/Sources/` and `macos-word-entropy/Tests/`
+## Sources of truth
 
-Read-only scans must skip dependency, build, release, cache, and git-internal directories unless explicitly approved.
+- Extension contract and permissions: `manifest.json`
+- Runtime behavior: JavaScript, HTML, and CSS in the repository
+- Baseline vocabulary: `vocabulary.json`
+- Vocabulary history: `vocab_versions/`
+- User-facing operation: `README.md` and `docs/`
+- Privacy explanation: `PRIVACY.md`
+- Version identity: `manifest.json`
 
-## Allowed Write Scope
+Documentation must not claim a capability that the current code does not implement.
 
-Current Phase 9: none inside `/Users/zj1-6/Desktop/TechWordLearn`.
+## Product boundaries
 
-Future first-task recommendation after human approval and worktree creation:
-- documentation files;
-- README / docs updates;
-- non-production source files directly named in the approved task;
-- tests directly named in the approved task;
-- config examples that do not contain secrets.
+- The extension does not require an OpenAI API key.
+- Codex may assist development but cannot make the user's final product decisions.
+- Page text is processed locally for matching and highlighting.
+- Cloud synchronization is optional and must use a user-configured endpoint.
+- No credentials or tokens may be committed.
+- Generated release artifacts and local runtime state are not source truth.
+- The project does not claim Chrome Web Store publication, hosted service availability, or production support.
 
-## Forbidden Paths
+## External presentation
 
-Always forbidden unless explicitly authorized in a later phase:
-- `.env`
-- `.env.*`
-- files or paths containing `secret`
-- files or paths containing `credential`
-- files or paths containing `token`
-- private keys
-- `id_rsa`
-- `*.pem`
-- `*.key`
-- wallets
-- vault
-- production database dumps
-- customer-sensitive data
-- `node_modules`
-- `.git` internals
-- build artifacts
-- release artifacts unless the task is explicitly release review
-- `dist`
-- `build`
-- `.next`
-- `coverage`
-- `.turbo`
-- `.cache`
-- `macos-word-entropy/.build`
-- `macos-word-entropy/.swiftpm`
+For public presentation, lead with the user problem and visible workflow:
 
-## Allowed Commands
+> Learn technical English while reading real technical content.
 
-Current Phase 9 allowed commands were read-only only:
-- `ls`
-- `find` with bounded `maxdepth`
-- `sed` / `cat` for safe docs and non-sensitive metadata
-- `git status --short`
+Public documentation should focus on the user problem, visible product behavior, installation, privacy, and current capabilities. Historical implementation details remain available through Git history.
 
-Candidate future read-only commands after approval:
-- `git status --short`
-- `git diff --stat`
-- `git diff -- README.md docs/ manifest.json`
-- file listing with bounded depth and dependency/build exclusions
+## Validation
 
-Candidate future validation commands after explicit approval, not executed in Phase 9:
-- `node --check background.js content.js popup.js options.js`
-- Chrome manual extension loading checklist
-- `swift test` inside `macos-word-entropy/`, only if Swift tooling and dependency behavior are approved
+Minimum static validation:
 
-## Forbidden Commands
+```bash
+node --check background.js content.js popup.js options.js
+```
 
-- `rm -rf`
-- sudo destructive commands
-- production deploy
-- production migration
-- direct push to main
-- secret extraction
-- dependency install without approval
-- test/build without approval in this phase
-- starting local bridge services without approval
-- starting cloud sync services without approval
-- running release packaging without approval
-- modifying LaunchAgents without approval
-- reading `.env` or credential files
+Minimum manual validation in a fresh Chrome profile:
 
-## Test Commands
+1. Load the repository as an unpacked extension.
+2. Open an HTTPS technical webpage.
+3. Verify highlighting and hover definitions.
+4. Verify pronunciation.
+5. Verify popup statistics.
+6. Add and remove a custom term.
+7. Verify import/export.
+8. Confirm optional cloud sync is off unless configured.
+9. Inspect the extension service worker for unexpected errors.
 
-Candidate commands, not executed:
-- `node --check background.js content.js popup.js options.js`
-- manual Chrome extension load through `chrome://extensions/`
-- manual smoke test: highlight, tooltip, pronunciation, popup stats, options vocabulary edit
-- `cd macos-word-entropy && swift test`
+## Current priorities
 
-## Lint / Typecheck Commands
-
-Candidate commands, not executed:
-- `node --check background.js content.js popup.js options.js`
-- Swift package compile / test checks only after explicit approval
-
-No `package.json` was observed during Phase 9, so no `npm test`, `npm run lint`, or `npm run typecheck` command is currently defined.
-
-## Acceptance Criteria
-
-For the first low-risk task:
-- scope is documentation-only or clearly non-production;
-- changes occur only in a dedicated git worktree after human approval;
-- forbidden paths remain untouched;
-- no secrets are read;
-- no cloud sync token is exposed;
-- no service is started;
-- no dependency install occurs without approval;
-- candidate validation commands are approved before execution;
-- diff is small and reviewable;
-- rollback plan is documented;
-- results are written back to CognitiveSystem.
-
-## Rollback Plan
-
-For future work:
-- use a dedicated git worktree and branch;
-- keep changes scoped to approved files;
-- review `git diff` before approval;
-- discard the worktree or branch if rejected;
-- do not alter main directly;
-- do not deploy or package releases during initial onboarding.
-
-## Result Writeback Path
-
-Default:
-
-/Users/zj1-6/CognitiveSystem/07_project_memory/TechWordLearn/
-
-/Users/zj1-6/CognitiveSystem/04_results/
-
-## Human Approval Checklist
-
-- Human confirms this project is appropriate for low-risk onboarding.
-- Human reviews this PROJECT.md draft.
-- Human approves writing PROJECT.md into project root.
-- Human approves allowed read scope.
-- Human approves allowed write scope.
-- Human approves forbidden paths.
-- Human approves test / lint / typecheck commands.
-- Human approves rollback plan.
-- Human approves worktree strategy.
-- Human confirms no secrets should be read.
-- Human approves the first concrete task.
+1. Add a real product screenshot and short demo recording.
+2. Verify installation in a fresh Chrome profile.
+3. Publish a stable GitHub release ZIP if desired.
+4. Submit the project to the OpenAI Showcase.
+5. Collect feedback before expanding product scope.
