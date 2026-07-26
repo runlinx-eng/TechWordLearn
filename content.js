@@ -4,11 +4,15 @@
 
 (() => {
   // 防止重复注入导致重复绑定事件（版本化标记，允许从旧脚本平滑升级）
-  const CONTENT_BOOTSTRAP_VERSION = 3;
+  const CONTENT_BOOTSTRAP_VERSION = 4;
   if (window.__techwordlearn_loaded__ === CONTENT_BOOTSTRAP_VERSION) return;
   window.__techwordlearn_loaded__ = CONTENT_BOOTSTRAP_VERSION;
   console.log("[TechWordLearn] content.js active v1.12");
 
+  const EXTENSION_ENABLED_KEY = "extension_enabled";
+  let extensionEnabled = false;
+  let extensionStateInitialized = false;
+  let extensionStateChangedDuringInit = false;
   let vocabulary = {};
   let baseVocab = {};
   let customVocab = {};
@@ -30,8 +34,9 @@
 
   let compiled = null; // { testRegex, replaceRegex, usesBoundaryCapture }
   let scanTimer = null;
-  const observedRoots = new WeakSet();
+  let observedRoots = new WeakSet();
   const rootObservers = [];
+  let observerBootstrapTimers = [];
   let rootMutationHandler = null;
 
   let hoverSeq = 0; // 防止异步 storage 回调串台
@@ -44,6 +49,7 @@
   let __tts_requestSeq = 0;
 
   function ensureTooltipEl() {
+    if (!extensionEnabled) return null;
     if (tooltipEl && tooltipEl.isConnected) return tooltipEl;
 
     tooltipEl = document.getElementById("neural-tooltip-container");
@@ -55,8 +61,6 @@
     if (mountTarget) mountTarget.appendChild(tooltipEl);
     return tooltipEl;
   }
-
-  ensureTooltipEl();
 
   function isContextInvalidated(errOrMsg) {
     const msg =
@@ -320,7 +324,7 @@
   }
 
   function ensureRootObservers() {
-    if (!rootMutationHandler) return;
+    if (!extensionEnabled || !rootMutationHandler) return;
     const roots = collectScanRoots();
     for (const root of roots) {
       if (!root || observedRoots.has(root)) continue;
@@ -329,6 +333,19 @@
       observedRoots.add(root);
       rootObservers.push(obs);
     }
+  }
+
+  function stopObservingChanges() {
+    for (const observer of rootObservers) {
+      observer.disconnect();
+    }
+    rootObservers.length = 0;
+    observedRoots = new WeakSet();
+
+    for (const timer of observerBootstrapTimers) {
+      clearTimeout(timer);
+    }
+    observerBootstrapTimers = [];
   }
 
   function getCurrentWeekKey() {
@@ -480,8 +497,66 @@
   }
 
   function hideTooltip() {
-    const tip = ensureTooltipEl();
+    const tip =
+      (tooltipEl && tooltipEl.isConnected && tooltipEl) ||
+      document.getElementById("neural-tooltip-container");
     if (tip) tip.classList.remove("active");
+  }
+
+  function removePageEffects() {
+    const highlights = new Set();
+    for (const root of collectScanRoots()) {
+      if (!root.querySelectorAll) continue;
+      for (const span of root.querySelectorAll(".tech-word-highlight")) {
+        highlights.add(span);
+      }
+    }
+
+    const parents = new Set();
+    for (const span of highlights) {
+      if (span.parentNode) parents.add(span.parentNode);
+      unwrapSpanKeepChildren(span);
+    }
+    for (const parent of parents) {
+      if (parent && parent.isConnected && typeof parent.normalize === "function") {
+        parent.normalize();
+      }
+    }
+
+    hideTooltip();
+    const tip =
+      (tooltipEl && tooltipEl.isConnected && tooltipEl) ||
+      document.getElementById("neural-tooltip-container");
+    if (tip) tip.remove();
+    tooltipEl = null;
+  }
+
+  function applyExtensionEnabledState(enabled) {
+    const nextEnabled = Boolean(enabled);
+    if (extensionStateInitialized && nextEnabled === extensionEnabled) return;
+
+    extensionStateInitialized = true;
+    extensionEnabled = nextEnabled;
+    hoverSeq++;
+
+    if (!extensionEnabled) {
+      if (scanTimer) {
+        clearTimeout(scanTimer);
+        scanTimer = null;
+      }
+      stopObservingChanges();
+      compiled = null;
+      removePageEffects();
+      try {
+        window.speechSynthesis.cancel();
+      } catch (_) {}
+      return;
+    }
+
+    ensureTooltipEl();
+    compileMatchers();
+    highlightDocument();
+    observeChanges();
   }
 
   function findHighlightFromNode(node) {
@@ -508,6 +583,7 @@
 
   // --- Hover + Click delegation (works even if highlight wraps <i>/<code> etc) ---
   function onMouseOver(e) {
+    if (!extensionEnabled) return;
     const span = findHighlightFromEvent(e);
     if (!span) return;
 
@@ -533,6 +609,7 @@
   }
 
   function onMouseOut(e) {
+    if (!extensionEnabled) return;
     // 只在“离开高亮 span 本体”时隐藏，避免 document 级 mouseout 冒泡误伤
     const fromSpan = findHighlightFromEvent(e);
     if (!fromSpan) return;
@@ -546,6 +623,7 @@
   }
 
   function onClick(e) {
+    if (!extensionEnabled) return;
     const span = findHighlightFromEvent(e);
     if (!span) return;
 
@@ -692,7 +770,7 @@
 
   // --- Highlight pass 1: single text node replace (fast) ---
   function highlightWithinTextNodes(root) {
-    if (!compiled) return;
+    if (!extensionEnabled || !compiled) return;
 
     const { testRegex, replaceRegex, usesBoundaryCapture } = compiled;
 
@@ -788,7 +866,7 @@
   }
 
   function highlightAcrossNodesInBlock(block) {
-    if (!compiled) return;
+    if (!extensionEnabled || !compiled) return;
 
     // 只对“可能被拆分”的块做：有子元素（斜体/代码高亮一般会产生）
     if (!block.querySelector || block.querySelectorAll("*").length === 0) return;
@@ -882,7 +960,7 @@
   }
 
   function highlightDocument() {
-    if (!compiled || !document.body) return;
+    if (!extensionEnabled || !compiled || !document.body) return;
 
     const roots = collectScanRoots();
     for (const root of roots) {
@@ -904,8 +982,11 @@
   }
 
   function scheduleRescan() {
+    if (!extensionEnabled) return;
     if (scanTimer) clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
+      scanTimer = null;
+      if (!extensionEnabled) return;
       ensureRootObservers();
       compileMatchers();
       highlightDocument();
@@ -914,44 +995,54 @@
 
   // --- Observe DOM changes (SPA / infinite scroll) ---
   function observeChanges() {
-    rootMutationHandler = (mutations) => {
-      let shouldRescan = false;
-      let shouldRefreshRoots = false;
-      for (const m of mutations) {
-        if (m.type === "characterData") {
-          shouldRescan = true;
-          continue;
-        }
-        if (m.addedNodes && m.addedNodes.length > 0) {
-          shouldRescan = true;
-          for (const added of m.addedNodes) {
-            if (containsOpenShadowRoot(added)) {
-              shouldRefreshRoots = true;
-              break;
-            }
+    if (!extensionEnabled) return;
+    if (!rootMutationHandler) {
+      rootMutationHandler = (mutations) => {
+        if (!extensionEnabled) return;
+        let shouldRescan = false;
+        let shouldRefreshRoots = false;
+        for (const m of mutations) {
+          if (m.type === "characterData") {
+            shouldRescan = true;
+            continue;
           }
-          if (shouldRefreshRoots) break;
+          if (m.addedNodes && m.addedNodes.length > 0) {
+            shouldRescan = true;
+            for (const added of m.addedNodes) {
+              if (containsOpenShadowRoot(added)) {
+                shouldRefreshRoots = true;
+                break;
+              }
+            }
+            if (shouldRefreshRoots) break;
+          }
         }
-      }
-      if (shouldRefreshRoots) ensureRootObservers();
-      if (shouldRescan) scheduleRescan();
-    };
+        if (shouldRefreshRoots) ensureRootObservers();
+        if (shouldRescan) scheduleRescan();
+      };
+    }
 
     ensureRootObservers();
 
     // 某些 SPA 会延迟挂载/替换根节点，补三次启动兜底
-    [700, 1800, 4000].forEach((ms) => {
+    observerBootstrapTimers = [700, 1800, 4000].map((ms) =>
       setTimeout(() => {
+        if (!extensionEnabled) return;
         ensureRootObservers();
         scheduleRescan();
-      }, ms);
-    });
+      }, ms)
+    );
   }
 
   // --- Storage sync ---
   safeAddStorageOnChangedListener((changes, area) => {
     if (area !== "local") return;
     let shouldRescan = false;
+    const enabledChanged = Object.prototype.hasOwnProperty.call(changes, EXTENSION_ENABLED_KEY);
+    const nextEnabled = enabledChanged
+      ? changes[EXTENSION_ENABLED_KEY].newValue !== false
+      : extensionEnabled;
+    if (enabledChanged) extensionStateChangedDuringInit = true;
 
     if (changes.mastered_list) {
       masteredWords = new Set(changes.mastered_list.newValue || []);
@@ -970,6 +1061,11 @@
 
     if (shouldRescan) {
       rebuildVocabulary();
+    }
+
+    if (enabledChanged) {
+      applyExtensionEnabledState(nextEnabled);
+    } else if (shouldRescan && extensionEnabled) {
       scheduleRescan();
     }
   });
@@ -980,12 +1076,17 @@
       sendResponse({
         ok: true,
         version: "1.12",
+        enabled: extensionEnabled,
         vocabSize: Object.keys(vocabulary || {}).length,
       });
       return;
     }
 
     if (req && req.action === "prompt_for_definition") {
+      if (!extensionEnabled) {
+        sendResponse({ ok: false, error: "extension_disabled" });
+        return;
+      }
       const key = normalizeWord(req.word);
       if (!key) return;
 
@@ -1009,17 +1110,24 @@
   });
 
   // --- Init ---
-  Promise.all([safeStorageGetPromise(["mastered_list", "custom_vocab", "deleted_vocab"]), loadBaseVocabulary()])
+  Promise.all([
+    safeStorageGetPromise([
+      "mastered_list",
+      "custom_vocab",
+      "deleted_vocab",
+      EXTENSION_ENABLED_KEY,
+    ]),
+    loadBaseVocabulary(),
+  ])
     .then(([st, loadedBaseVocab]) => {
       baseVocab = loadedBaseVocab;
       masteredWords = new Set(st.mastered_list || []);
       customVocab = sanitizeWordMap(st.custom_vocab || {});
       deletedWords = new Set(sanitizeWordList(st.deleted_vocab || []));
       rebuildVocabulary();
-
-      compileMatchers();
-      highlightDocument();
-      observeChanges();
+      applyExtensionEnabledState(
+        extensionStateChangedDuringInit ? extensionEnabled : st[EXTENSION_ENABLED_KEY] !== false
+      );
     })
     .catch(() => {});
 })();

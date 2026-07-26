@@ -1,0 +1,57 @@
+{
+  "project_type": {
+    "characters": 36,
+    "limit": null,
+    "within_limit": true
+  },
+  "tech_stack": {
+    "characters": 157,
+    "limit": null,
+    "within_limit": true
+  },
+  "use_cases": {
+    "characters": 123,
+    "limit": 255,
+    "within_limit": true
+  },
+  "capability": {
+    "characters": 215,
+    "limit": 1000,
+    "within_limit": true
+  },
+  "models_apis": {
+    "characters": 114,
+    "limit": 500,
+    "within_limit": true
+  },
+  "other_models": {
+    "characters": 118,
+    "limit": 255,
+    "within_limit": true
+  },
+  "building_process": {
+    "characters": 330,
+    "limit": 500,
+    "within_limit": true
+  },
+  "setup": {
+    "characters": 342,
+    "limit": 500,
+    "within_limit": true
+  },
+  "title": {
+    "characters": 55,
+    "limit": 255,
+    "within_limit": true
+  },
+  "tagline": {
+    "characters": 173,
+    "limit": 255,
+    "within_limit": true
+  },
+  "description": {
+    "characters": 759,
+    "limit": 1000,
+    "within_limit": true
+  }
+}
