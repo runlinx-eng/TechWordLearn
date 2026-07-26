@@ -1,3 +1,64 @@
+const EXTENSION_ENABLED_KEY = "extension_enabled";
+
+function isExtensionEnabled(value) {
+  return value !== false;
+}
+
+function paintGlobalState(enabled, helpText) {
+  const control = document.getElementById("global-control");
+  const input = document.getElementById("global-enabled");
+  const label = document.getElementById("global-state-label");
+  const help = document.getElementById("global-state-help");
+  if (!control || !input || !label || !help) return;
+
+  control.dataset.enabled = String(enabled);
+  input.checked = enabled;
+  label.textContent = enabled ? "TechWordLearn enabled" : "TechWordLearn disabled";
+  help.textContent =
+    helpText ||
+    (enabled
+      ? "Highlights are active on all supported pages."
+      : "Page highlighting and interactions are paused.");
+}
+
+function loadGlobalState(callback) {
+  const input = document.getElementById("global-enabled");
+  chrome.storage.local.get([EXTENSION_ENABLED_KEY], (items) => {
+    const lastErr = chrome.runtime.lastError;
+    if (lastErr) {
+      paintGlobalState(true, `State read failed: ${lastErr.message}`);
+      if (input) input.disabled = true;
+      if (callback) callback(true);
+      return;
+    }
+
+    const enabled = isExtensionEnabled(items[EXTENSION_ENABLED_KEY]);
+    paintGlobalState(enabled);
+    if (input) input.disabled = false;
+    if (callback) callback(enabled);
+  });
+}
+
+function saveGlobalState(enabled) {
+  const input = document.getElementById("global-enabled");
+  if (input) input.disabled = true;
+  paintGlobalState(enabled, enabled ? "Enabling on all open pages..." : "Disabling on all open pages...");
+
+  chrome.storage.local.set({ [EXTENSION_ENABLED_KEY]: enabled }, () => {
+    const lastErr = chrome.runtime.lastError;
+    if (lastErr) {
+      const restored = !enabled;
+      paintGlobalState(restored, `State save failed: ${lastErr.message}`);
+      if (input) input.disabled = false;
+      return;
+    }
+
+    paintGlobalState(enabled);
+    if (input) input.disabled = false;
+    renderDiagnosis();
+  });
+}
+
 function renderStats() {
   chrome.storage.local.get(null, (items) => {
     const listDiv = document.getElementById("stats-list");
@@ -69,32 +130,50 @@ function renderDiagnosis() {
   const diagDiv = document.getElementById("diag");
   if (!diagDiv) return;
 
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs && tabs[0];
-    if (!tab) {
-      diagDiv.textContent = "Page: (none) | Injection: no active tab";
+  chrome.storage.local.get([EXTENSION_ENABLED_KEY], (items) => {
+    const stateErr = chrome.runtime.lastError;
+    if (stateErr) {
+      diagDiv.textContent = `Global state unavailable: ${stateErr.message}`;
       return;
     }
 
-    const url = String(tab.url || "");
-    const shortUrl = url.length > 80 ? `${url.slice(0, 77)}...` : url;
-    if (!isInjectableUrl(url)) {
-      diagDiv.textContent = `Page: ${shortUrl} | Injection: blocked by scheme`;
+    if (!isExtensionEnabled(items[EXTENSION_ENABLED_KEY])) {
+      diagDiv.textContent = "Global state: disabled | Page effects paused";
       return;
     }
 
-    chrome.tabs.sendMessage(tab.id, { action: "twl_ping" }, (res) => {
-      const lastErr = chrome.runtime.lastError;
-      if (lastErr) {
-        readInjectDiag((extra) => {
-          diagDiv.textContent = `Page: ${shortUrl} | Injection: no content script (${lastErr.message})${extra}`;
-        });
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab) {
+        diagDiv.textContent = "Page: (none) | Injection: no active tab";
         return;
       }
 
-      const ver = res && res.version ? res.version : "unknown";
-      const vocabCount = typeof (res && res.vocabSize) === "number" ? res.vocabSize : "n/a";
-      diagDiv.textContent = `Page: ${shortUrl} | Injection: active v${ver} | Vocab: ${vocabCount}`;
+      const url = String(tab.url || "");
+      const shortUrl = url.length > 80 ? `${url.slice(0, 77)}...` : url;
+      if (!isInjectableUrl(url)) {
+        diagDiv.textContent = `Page: ${shortUrl} | Injection: blocked by scheme`;
+        return;
+      }
+
+      chrome.tabs.sendMessage(tab.id, { action: "twl_ping" }, (res) => {
+        const lastErr = chrome.runtime.lastError;
+        if (lastErr) {
+          readInjectDiag((extra) => {
+            diagDiv.textContent = `Page: ${shortUrl} | Injection: no content script (${lastErr.message})${extra}`;
+          });
+          return;
+        }
+
+        if (res && res.enabled === false) {
+          diagDiv.textContent = `Page: ${shortUrl} | Injection: paused`;
+          return;
+        }
+
+        const ver = res && res.version ? res.version : "unknown";
+        const vocabCount = typeof (res && res.vocabSize) === "number" ? res.vocabSize : "n/a";
+        diagDiv.textContent = `Page: ${shortUrl} | Injection: active v${ver} | Vocab: ${vocabCount}`;
+      });
     });
   });
 }
@@ -129,10 +208,20 @@ function openManager() {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("open-vocab-manager").addEventListener("click", openManager);
+  document.getElementById("global-enabled").addEventListener("change", (event) => {
+    saveGlobalState(Boolean(event.target.checked));
+  });
   document.getElementById("refresh-stats").addEventListener("click", () => {
     renderStats();
     renderDiagnosis();
   });
-  renderDiagnosis();
-  renderStats();
+  loadGlobalState(() => {
+    renderDiagnosis();
+    renderStats();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes[EXTENSION_ENABLED_KEY]) return;
+    paintGlobalState(isExtensionEnabled(changes[EXTENSION_ENABLED_KEY].newValue));
+  });
 });

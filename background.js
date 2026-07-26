@@ -3,6 +3,7 @@ console.log("[TechWordLearn] background.js active v1.12");
 const VOCAB_SYNC_KEYS = ["custom_vocab", "deleted_vocab"];
 const VOCAB_SYNC_STAMP_KEY = "vocab_sync_updated_at";
 const VOCAB_SYNC_ALL_KEYS = [...VOCAB_SYNC_KEYS, VOCAB_SYNC_STAMP_KEY];
+const EXTENSION_ENABLED_KEY = "extension_enabled";
 const INJECT_DIAG_KEY = "__twl_inject_diag";
 const BRIDGE_SYNC_URL = "http://127.0.0.1:43110/sync";
 const BRIDGE_REQUEST_TIMEOUT_MS = 2500;
@@ -551,7 +552,44 @@ function ensureBridgeAlarm() {
   chrome.alarms.create(BRIDGE_ALARM_NAME, { periodInMinutes: BRIDGE_ALARM_PERIOD_MINUTES });
 }
 
+function applyGlobalEnabledUi(enabled) {
+  const isEnabled = Boolean(enabled);
+
+  if (chrome.action) {
+    if (chrome.action.setBadgeText) {
+      chrome.action.setBadgeText({ text: isEnabled ? "" : "OFF" });
+    }
+    if (chrome.action.setBadgeBackgroundColor && !isEnabled) {
+      chrome.action.setBadgeBackgroundColor({ color: "#64748b" });
+    }
+    if (chrome.action.setTitle) {
+      chrome.action.setTitle({
+        title: isEnabled ? "TechWordLearn (enabled)" : "TechWordLearn (disabled)",
+      });
+    }
+  }
+
+  if (chrome.contextMenus && chrome.contextMenus.update) {
+    chrome.contextMenus.update("add-tech-word", { enabled: isEnabled }, () => {
+      void chrome.runtime.lastError;
+    });
+  }
+}
+
+async function refreshGlobalEnabledUi() {
+  const items = await getStorage("local", [EXTENSION_ENABLED_KEY]);
+  const enabled = items[EXTENSION_ENABLED_KEY] !== false;
+  applyGlobalEnabledUi(enabled);
+  return enabled;
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && Object.prototype.hasOwnProperty.call(changes, EXTENSION_ENABLED_KEY)) {
+    const enabled = changes[EXTENSION_ENABLED_KEY].newValue !== false;
+    applyGlobalEnabledUi(enabled);
+    if (enabled) void reinjectOpenTabs();
+  }
+
   if (!hasTrackedChange(changes)) return;
 
   if (area === "local") {
@@ -645,8 +683,11 @@ function injectContentIntoTab(tabId, url) {
   );
 }
 
-function reinjectOpenTabs() {
+async function reinjectOpenTabs() {
   if (!chrome.tabs || !chrome.tabs.query) return;
+  const items = await getStorage("local", [EXTENSION_ENABLED_KEY]);
+  if (items[EXTENSION_ENABLED_KEY] === false) return;
+
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs || []) {
       if (!tab || !tab.id) continue;
@@ -657,7 +698,7 @@ function reinjectOpenTabs() {
   });
 }
 
-function maybeInjectTab(tabId, url) {
+async function maybeInjectTab(tabId, url) {
   if (!tabId) return;
   const normalizedUrl = String(url || "");
   if (normalizedUrl && !isInjectableTabUrl(normalizedUrl)) {
@@ -668,12 +709,19 @@ function maybeInjectTab(tabId, url) {
     recordInjectDiag("skip_unknown_scheme", tabId, normalizedUrl);
     return;
   }
+
+  const items = await getStorage("local", [EXTENSION_ENABLED_KEY]);
+  if (items[EXTENSION_ENABLED_KEY] === false) {
+    recordInjectDiag("skip_extension_disabled", tabId, normalizedUrl);
+    return;
+  }
   injectContentIntoTab(tabId, normalizedUrl);
 }
 
 // service worker 被重载/唤醒时也主动补注入，避免旧页面残留失效 content script
 reinjectOpenTabs();
 ensureBridgeAlarm();
+void refreshGlobalEnabledUi();
 void reconcileVocabState("service_worker_boot");
 void syncViaLocalBridge("service_worker_boot", true);
 void syncViaCloud("service_worker_boot", true);
@@ -686,6 +734,7 @@ chrome.runtime.onInstalled.addListener(() => {
         title: "Add \"%s\" to Tech Vocabulary",
         contexts: ["selection"]
       });
+      void refreshGlobalEnabledUi();
       reinjectOpenTabs();
       ensureBridgeAlarm();
       void reconcileVocabState("on_installed");
@@ -746,16 +795,20 @@ if (chrome.contextMenus && chrome.contextMenus.onClicked && chrome.tabs && chrom
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId !== "add-tech-word" || !info.selectionText || !tab?.id) return;
 
-    chrome.tabs.sendMessage(
-      tab.id,
-      { action: "prompt_for_definition", word: info.selectionText.trim() },
-      () => {
-        // 典型失败页面：chrome://、Chrome Web Store、内置 PDF viewer 等
-        if (chrome.runtime.lastError) {
-          console.warn("sendMessage failed:", chrome.runtime.lastError.message);
+    void getStorage("local", [EXTENSION_ENABLED_KEY]).then((items) => {
+      if (items[EXTENSION_ENABLED_KEY] === false) return;
+
+      chrome.tabs.sendMessage(
+        tab.id,
+        { action: "prompt_for_definition", word: info.selectionText.trim() },
+        () => {
+          // 典型失败页面：chrome://、Chrome Web Store、内置 PDF viewer 等
+          if (chrome.runtime.lastError) {
+            console.warn("sendMessage failed:", chrome.runtime.lastError.message);
+          }
         }
-      }
-    );
+      );
+    });
   });
 }
 

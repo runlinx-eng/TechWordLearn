@@ -15,6 +15,81 @@
       margin: 0 0 10px 0;
       font-size: 16px;
     }
+    .global-control {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      background: #f0fdf4;
+    }
+    .global-control[data-enabled="false"] {
+      border-color: #cbd5e1;
+      background: #f1f5f9;
+    }
+    .global-state-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #166534;
+    }
+    .global-control[data-enabled="false"] .global-state-label {
+      color: #475569;
+    }
+    .global-state-help {
+      margin-top: 2px;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #64748b;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      flex: 0 0 auto;
+      width: 44px;
+      height: 24px;
+    }
+    .switch input {
+      width: 0;
+      height: 0;
+      opacity: 0;
+    }
+    .slider {
+      position: absolute;
+      inset: 0;
+      cursor: pointer;
+      border-radius: 999px;
+      background: #94a3b8;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      left: 3px;
+      top: 3px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+      transition: transform 0.2s;
+    }
+    .switch input:checked + .slider {
+      background: #16a34a;
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(20px);
+    }
+    .switch input:focus-visible + .slider {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
+    }
+    .switch input:disabled + .slider {
+      cursor: wait;
+      opacity: 0.6;
+    }
     .meta {
       margin-bottom: 10px;
       font-size: 12px;
@@ -81,6 +156,22 @@
 </head>
 <body>
   <h3>High Frequency Review</h3>
+  <div id="global-control" class="global-control" data-enabled="true">
+    <div>
+      <div id="global-state-label" class="global-state-label">Loading global state...</div>
+      <div id="global-state-help" class="global-state-help">Applies to every supported page.</div>
+    </div>
+    <label class="switch" title="Enable or disable TechWordLearn on all pages">
+      <input
+        id="global-enabled"
+        type="checkbox"
+        role="switch"
+        aria-labelledby="global-state-label"
+        disabled
+      />
+      <span class="slider" aria-hidden="true"></span>
+    </label>
+  </div>
   <div id="meta" class="meta">Loading...</div>
   <div id="diag" class="meta">Diagnosing page...</div>
   <div id="stats-list">Loading...</div>
