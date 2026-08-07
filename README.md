@@ -1,166 +1,214 @@
 # TechWordLearn
 
-**Learn technical English while reading real technical content.**
+**在真实英文技术内容中学习技术英语。**
 
-TechWordLearn is an open-source Chrome extension that highlights technical English terms directly on webpages, explains them in context, pronounces them, and turns repeated lookups into a personal learning record.
+TechWordLearn 是一款面向中文用户的开源 Chrome 扩展。它会直接在技术文档、文章、代码仓库和产品页面中高亮技术词汇，提供中文释义与发音，并把重复查询积累为个人学习记录。
 
-> 中文简介：TechWordLearn 是一个技术英语沉浸学习扩展。它在真实网页中高亮技术词汇，提供悬浮释义、发音、查询统计和个人词库管理，让学习发生在阅读过程中，而不是脱离上下文背单词。
+它的目标不是让你离开上下文背单词，而是让技术英语学习自然发生在日常阅读过程中。
 
-![TechWordLearn highlighting technical terms on a webpage](docs/showcase/techwordlearn-cover.png)
+![TechWordLearn 在网页中高亮技术词汇](docs/showcase/techwordlearn-cover.png)
 
-## Why it exists
+## 它解决什么问题
 
-Technical vocabulary is easiest to remember when it appears inside real documentation, articles, repositories, and product pages. TechWordLearn keeps the reading flow intact:
+技术词汇放在真实语境中更容易理解和记忆。使用 TechWordLearn 时，阅读流程不需要被打断：
 
-1. Open an English technical webpage.
-2. Recognized terms are highlighted in place.
-3. Hover to see a definition.
-4. Click to hear pronunciation.
-5. Repeated lookups become a visible learning signal.
-6. Add, hide, restore, export, or sync vocabulary as your needs change.
+1. 打开英文技术文档、文章或产品页面。
+2. 扩展自动高亮已收录的技术词汇。
+3. 鼠标悬停查看中文释义。
+4. 点击单词播放发音。
+5. 查询次数自动形成学习记录。
+6. 根据需要新增、隐藏、恢复、备份或同步个人词库。
 
-## Core features
+## 核心功能
 
-- In-page technical term highlighting
-- Global enable/disable switch that immediately removes or restores highlights
-- Hover definitions
-- Pronunciation with Chrome TTS and Web Speech fallback
-- Total and weekly lookup statistics
-- Custom vocabulary: add, edit, delete, hide, and restore
-- Mark-known workflow to reduce visual noise
-- Vocabulary backups and version snapshots
-- JSON import and export
-- Manual Chrome profile sync for custom and deleted vocabulary
-- Optional user-configured cloud sync, triggered only by its button
+- 在网页正文中高亮技术英语词汇
+- 全局启用/关闭开关，立即移除或恢复页面高亮
+- 悬停查看中文释义
+- 使用 Chrome TTS 发音，并以浏览器 Web Speech 作为后备
+- 记录累计查询和自然周查询统计
+- 管理自定义词库：新增、修改、删除、隐藏和恢复词条
+- 将已掌握词汇标记为不再高亮，降低阅读干扰
+- 自动保留词库备份和版本快照
+- 导入或导出备份；文件格式为 JSON
+- 完全手动的 Chrome 多设备词库同步
+- 可选的自建服务器同步，只有点击按钮才会执行
 
-## Demo flow
+## 60 秒体验流程
 
-A useful 60-second demonstration is:
+1. 按下方步骤加载扩展。
+2. 打开一篇英文技术文章或文档。
+3. 将鼠标移到高亮词汇上查看中文释义。
+4. 点击词汇播放发音。
+5. 打开扩展弹窗查看查询统计。
+6. 打开“词库管理”，新增一个自定义词。
+7. 刷新网页，确认新词已进入高亮范围。
 
-1. Load the unpacked extension.
-2. Open a technical article or documentation page.
-3. Hover a highlighted term to show its definition.
-4. Play the pronunciation.
-5. Open the popup to show lookup statistics.
-6. Open vocabulary management and add a custom term.
-7. Refresh the page and show the new term highlighted.
+## 本地安装
 
-## Install locally
+扩展不需要构建，也不需要 OpenAI API Key。
 
-No build step or OpenAI API key is required.
+1. 克隆本仓库，或下载并解压 ZIP。
+2. 在 Chrome 地址栏打开 `chrome://extensions/`。
+3. 打开右上角的“开发者模式”。
+4. 点击“加载已解压的扩展程序”。
+5. 选择本仓库的根目录。
+6. 打开一个英文技术网页并刷新。
 
-1. Clone this repository or download it as a ZIP.
-2. Open `chrome://extensions/` in Chrome.
-3. Enable **Developer mode**.
-4. Select **Load unpacked**.
-5. Choose the repository root.
-6. Open an English technical webpage and refresh it.
+更新本地代码后，在 `chrome://extensions/` 中找到 TechWordLearn 并点击“重新加载”，然后刷新已打开的网页。
 
-## Global enable/disable switch
+## 日常使用
 
-Click the TechWordLearn icon in the Chrome toolbar to enable or disable the extension.
+### 查看释义和发音
 
-- Disabling it immediately removes highlights from open pages and pauses further page scanning and vocabulary interactions.
-- Re-enabling it automatically restores highlights on open pages without requiring a manual refresh.
-- The switch state is stored in the current Chrome profile.
-- Disabling the extension does not delete vocabulary, lookup statistics, or synchronization data.
+- 页面中的技术词汇会以轻量样式高亮。
+- 鼠标悬停在词汇上可查看中文释义。
+- 点击高亮词汇可播放发音。
 
-## How it works
+### 全局启用或关闭
 
-TechWordLearn is a Manifest V3 browser extension.
+点击 Chrome 工具栏中的 TechWordLearn 图标，即可启用或关闭扩展。
 
-- `content.js` scans page text, highlights recognized terms, renders tooltips, and records user interactions.
-- `background.js` manages TTS, context-menu actions, reinjection, and button-triggered self-hosted synchronization.
-- `popup.html` / `popup.js` show learning statistics and quick actions.
-- `options.html` / `options.js` provide vocabulary, backup, version, import/export, and explicit manual sync controls.
-- `manual-sync.js` validates, chunks, versions, and hashes Chrome profile sync snapshots.
-- `vocabulary.json` is the baseline technical vocabulary.
-- `vocab_versions/` stores repository-managed vocabulary snapshots.
+- 关闭后会立即移除已打开网页中的高亮，并暂停继续扫描和词汇交互。
+- 再次启用后，会自动恢复支持页面中的高亮，无需手动逐页刷新。
+- 开关状态保存在当前 Chrome Profile 中。
+- 关闭扩展不会删除词库、查询统计或同步数据。
 
-The extension avoids modifying text inputs, textareas, scripts, styles, and editable content.
+### 管理词库
 
-## Privacy and permissions
+在扩展弹窗中进入“词库管理”。主页面用于快速搜索和浏览当前词库：
 
-TechWordLearn needs broad page access because its main function is to highlight terms on webpages chosen by the user. Page matching and highlighting happen locally in the browser.
+- 默认按查询次数从高到低排列；次数相同时按字母排序。
+- 可筛选“全部 / 自定义 / 基线 / 隐藏”。
+- 点击任意词条，在右侧详情中查看释义、来源和查询次数。
+- 编辑、恢复基线、隐藏或删除等操作只在词条详情中出现。
+- 点击“+ 新增词”添加自己的词汇和中文释义。
 
-The extension does not require an account and does not require an OpenAI API key. Optional synchronization features are described in [PRIVACY.md](PRIVACY.md), including what is stored locally, what Chrome may sync, and what is sent only when a user configures their own endpoint.
+统计、同步、版本历史和备份操作位于次级页面，不占用主词库的浏览空间。
 
-## Built with Codex
+### 查看统计
 
-Codex was used as an engineering agent to inspect the existing extension, propose bounded changes, implement and validate features, diagnose browser-extension edge cases, and keep automated execution separate from human product decisions.
+在词库管理页点击“查看统计 ›”，可查看当前自然周内的高频查询词。弹窗中仍可查看累计查询和快速统计。
 
-TechWordLearn does **not** call the OpenAI API at runtime. Its OpenAI connection is the development process: Codex helped turn an evolving personal tool into a more coherent, inspectable open-source project.
+### 导入和导出备份
 
-## Optional synchronization
+在“词库管理”右上角点击“···”：
 
-### Chrome profile sync
+- 选择“导出备份”，保存当前自定义词库和隐藏词条。
+- 选择“导入备份”，将备份内容合并到当前词库；同名自定义词会被导入内容覆盖。
 
-Open **Vocabulary Management** and click **检查同步状态**. TechWordLearn then reads the shared snapshot and offers an explicit upload or download action when needed. It never applies or publishes profile-sync changes in the background.
+界面使用“备份”这一名称；实际文件格式仍为 JSON。
 
-Snapshots are split below Chrome's per-item quota, protected by SHA-256, and carry a monotonic revision. When both the local and shared copies changed from the last common revision, the extension refuses to guess and asks which side to keep. Chrome itself may transport a snapshot between signed-in profiles after the user saves it; that browser-managed transport is separate from TechWordLearn applying data.
+### 查看和恢复版本
 
-### Self-hosted cloud sync
+在“词库管理”右上角点击“···”→“版本历史”，可以：
 
-Users may explicitly enable synchronization to an endpoint they control:
+- 查看最近的词库变更时间和类型。
+- 查看版本与当前词库之间的差异。
+- 在确认后恢复某个历史版本。
 
-1. Deploy `scripts/vocab-cloud-sync-server.py`, or provide a compatible JSON `/sync` endpoint.
-2. Open **Vocabulary Management**.
-3. Enter the endpoint and optional Bearer token.
-4. Enable cloud sync and click **立即同步**. No startup, change-listener, or timer triggers it.
+## 多设备同步（完全手动）
 
-See [docs/cloud-vocab-sync.md](docs/cloud-vocab-sync.md).
+同步入口位于“词库管理”→“···”→“多设备同步”。TechWordLearn 不会在后台自动上传、下载或合并词库。
 
-### No local synchronization daemon
+### Chrome 多设备同步
 
-The extension does not install a polling daemon, open a loopback bridge, or read browser LevelDB files. Browser storage is accessed only through Chrome's supported extension APIs after a manual action.
+1. 点击“检查 Chrome 同步”。
+2. 扩展读取本机状态和 Chrome 中已经保存的共享快照。
+3. 根据检查结果，由你明确选择“使用本机词库上传”或“使用其他设备词库下载”。
 
-## Vocabulary version tools
+快照使用单调递增 revision、SHA-256 内容校验和分块存储。当本机与共享副本都发生变化时，扩展不会擅自覆盖，而是要求用户选择保留哪一侧。
+
+Chrome 可能在已登录的 Profile 之间传输用户明确保存的快照；这是 Chrome 自身的传输行为，不代表 TechWordLearn 会自动应用数据。
+
+### 自建服务器同步
+
+需要自行准备兼容的 `/sync` 服务：
+
+1. 部署 `scripts/vocab-cloud-sync-server.py`，或提供兼容的 JSON `/sync` 接口。
+2. 进入“词库管理”→“···”→“多设备同步”→“自建服务器同步”→“设置”。
+3. 填写服务器地址和可选的 Bearer Token。
+4. 勾选“启用”，点击“保存设置”。
+5. 需要同步时，再点击“立即同步”。
+
+保存设置本身不会触发同步。扩展启动、词库变化、后台唤醒和定时器都不会自动调用服务器。详细协议见 [自建服务器同步说明](docs/cloud-vocab-sync.md)。
+
+### 不使用本地同步守护进程
+
+当前扩展不会安装轮询守护进程，不会打开本地回环桥接服务，也不会直接读取或写入浏览器 LevelDB。浏览器数据只通过 Chrome 官方扩展 API 访问。
+
+## 隐私与权限
+
+TechWordLearn 需要读取网页内容，才能在用户打开的页面中识别并高亮词汇。词汇匹配和页面处理均在浏览器本地完成。
+
+扩展不要求注册账户，也不需要 OpenAI API Key。只有当用户主动配置并点击自建服务器同步时，词库数据才会发送到用户指定的端点。完整说明见 [隐私说明](PRIVACY.md)。
+
+## 工作原理
+
+TechWordLearn 使用 Chrome Extension Manifest V3：
+
+- `content.js`：扫描页面文字、高亮词汇、显示释义并记录交互。
+- `background.js`：处理发音、右键菜单、脚本重新注入和按钮触发的自建服务器同步。
+- `popup.html` / `popup.js`：提供快速统计和全局开关。
+- `options.html` / `options.js`：提供高密度词库浏览、词条操作、统计、备份、版本和手动同步入口。
+- `manual-sync.js`：校验、分块、版本化并哈希验证 Chrome 共享快照。
+- `vocabulary.json`：扩展使用的基线技术词库。
+- `vocab_versions/`：仓库管理的词库版本快照。
+
+扩展会跳过输入框、文本域、脚本、样式和可编辑区域，避免干扰页面正常操作。
+
+## 使用 Codex 开发
+
+Codex 作为工程协作工具参与了代码检查、方案设计、功能实现、浏览器扩展问题诊断、自动化测试和文档整理。最终产品方向和用户决策仍由项目所有者负责。
+
+TechWordLearn 运行时不会调用 OpenAI API；它与 OpenAI 的关系仅限于开发过程使用 Codex 协助完成工程工作。
+
+## 词库版本工具
 
 ```bash
-# Create a weekly or monthly snapshot
+# 创建周度或月度快照
 node scripts/vocab-version.js snapshot \
   --input <file> \
   --cadence weekly|monthly \
   --note <note>
 
-# Compare two vocabulary versions
+# 对比两个词库版本
 node scripts/vocab-version.js diff \
   --from <file> \
   --to <file>
 
-# Promote a version to vocabulary.json
+# 将指定版本发布为 vocabulary.json
 node scripts/vocab-version.js promote \
   --from <file> \
   --backup
 ```
 
-## Validation
+## 开发验证
 
-Before publishing a change:
+发布改动前运行：
 
 ```bash
-node --check background.js content.js popup.js manual-sync.js options.js
-node --test tests/manual-sync.test.cjs
+for file in background.js content.js popup.js manual-sync.js options.js; do node --check "$file"; done
+node --test tests/*.test.cjs
 ```
 
-Then verify with a fresh Chrome profile:
+然后使用全新的 Chrome Profile 手动验证：
 
-- Extension loads without errors
-- Highlighting appears on a normal HTTPS page
-- Tooltip and pronunciation work
-- Lookup counts update
-- Custom vocabulary changes take effect
-- Import/export works
-- Chrome profile sync performs no read, write, merge, or apply operation until a manual sync button is clicked
-- Cloud sync remains disabled unless explicitly configured
-- No secrets or local release artifacts are committed
+- 扩展能够正常加载且没有错误
+- 普通 HTTPS 页面可以显示词汇高亮
+- 中文释义和发音正常
+- 查询次数能够更新
+- 新增、修改、隐藏和恢复词条正常
+- 备份导入和导出正常
+- 未点击手动同步按钮前，不读取、写入、合并或应用 Chrome 共享快照
+- 未主动配置时，自建服务器同步保持关闭
+- 仓库中没有密钥、本地状态或发布产物
 
-## Project status
+## 项目状态
 
-TechWordLearn is a working open-source prototype and personal learning tool. It is suitable for local installation and demonstration, but it is not distributed through the Chrome Web Store and does not provide a hosted SaaS service.
+TechWordLearn 当前是一款可本地安装和演示的开源原型及个人学习工具。它尚未发布到 Chrome Web Store，也不提供托管式 SaaS 服务。
 
-See [PROJECT.md](PROJECT.md) for the current project boundary and [docs/showcase/SUBMISSION.md](docs/showcase/SUBMISSION.md) for the prepared OpenAI Showcase submission copy.
+稳定项目边界见 [PROJECT.md](PROJECT.md)；OpenAI Showcase 的英文提交文案见 [docs/showcase/SUBMISSION.md](docs/showcase/SUBMISSION.md)。
 
-## License
+## 许可证
 
-MIT. See [LICENSE](LICENSE).
+MIT，详见 [LICENSE](LICENSE)。

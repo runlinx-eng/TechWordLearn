@@ -3,158 +3,251 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TechWordLearn Vocabulary Manager</title>
+  <title>TechWordLearn 词库管理</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
   <main class="page">
     <header class="topbar">
-      <div>
-        <h1>词库管理</h1>
-        <p class="subtitle">手动调整、导入导出与快照恢复</p>
+      <h1>词库管理</h1>
+      <p id="summary" class="library-summary">Loading...</p>
+      <div id="topbar-actions" class="topbar-actions">
+        <button id="add-word-btn" class="btn primary" type="button">+ 新增词</button>
+        <div class="more-wrap">
+          <button
+            id="more-menu-btn"
+            class="icon-btn"
+            type="button"
+            aria-label="更多词库操作"
+            aria-expanded="false"
+          >···</button>
+          <div id="maintenance-menu" class="maintenance-menu" hidden>
+            <button id="open-sync-view-btn" class="menu-item" type="button">
+              <span>多设备同步</span><span aria-hidden="true">›</span>
+            </button>
+            <button id="open-versions-view-btn" class="menu-item" type="button">
+              <span>版本历史</span><span aria-hidden="true">›</span>
+            </button>
+            <div class="menu-divider"></div>
+            <label class="menu-item file-menu-item">
+              <span>导入备份</span>
+              <input id="import-input" type="file" accept="application/json,.json" />
+            </label>
+            <button id="export-btn" class="menu-item" type="button">导出备份</button>
+          </div>
+        </div>
       </div>
-      <p id="status" class="status">Ready</p>
     </header>
 
-    <section class="panel toolbar">
-      <input id="search-input" type="search" placeholder="搜索单词或释义..." />
-      <button id="export-btn" class="btn secondary">导出 JSON</button>
-      <label class="btn secondary file-btn">
-        导入 JSON
-        <input id="import-input" type="file" accept="application/json,.json" />
-      </label>
-    </section>
+    <p id="status" class="status" role="status" aria-live="polite">Ready</p>
 
-    <section class="panel manual-sync-panel">
-      <div class="cloud-header">
-        <div>
-          <h2>Chrome 手动同步</h2>
-          <p class="summary">只有点击这里时，TechWordLearn 才会读取或写入共享词库快照。</p>
-        </div>
-        <span class="manual-badge">无后台轮询</span>
-      </div>
-      <div class="actions manual-sync-actions">
-        <button id="check-manual-sync-btn" class="btn primary" type="button">检查同步状态</button>
-        <button id="upload-manual-sync-btn" class="btn secondary" type="button" hidden>
-          使用本机词库上传
-        </button>
-        <button id="download-manual-sync-btn" class="btn secondary" type="button" hidden>
-          使用共享词库下载
-        </button>
-      </div>
-      <p id="manual-sync-summary" class="summary" aria-live="polite">尚未检查</p>
-      <p class="hint">Chrome 可能在账号设备间传输已保存的快照；扩展不会自动应用、合并或覆盖词库。</p>
-    </section>
-
-    <section class="panel cloud-panel">
-      <div class="cloud-header">
-        <div>
-          <h2>自托管云端手动同步</h2>
-          <p class="summary">仅在点击“立即同步”时，把自定义词库同步到你自己的云端接口。</p>
-        </div>
-        <label class="cloud-toggle">
-          <input id="cloud-sync-enabled" type="checkbox" />
-          <span>启用</span>
+    <section id="main-view" class="view">
+      <div class="browse-tools">
+        <label class="search-box" for="search-input">
+          <span aria-hidden="true">⌕</span>
+          <input id="search-input" type="search" placeholder="搜索单词……" autocomplete="off" />
         </label>
-      </div>
-      <div class="cloud-grid">
-        <div class="field-row">
-          <label for="cloud-sync-endpoint">同步端点</label>
-          <input
-            id="cloud-sync-endpoint"
-            type="url"
-            inputmode="url"
-            placeholder="https://your-domain.example/sync"
-          />
+        <div class="filter-tabs" role="group" aria-label="筛选词库">
+          <button id="filter-all-btn" class="filter-tab active" type="button" aria-pressed="true">全部</button>
+          <button id="filter-custom-btn" class="filter-tab" type="button" aria-pressed="false">自定义</button>
+          <button id="filter-base-btn" class="filter-tab" type="button" aria-pressed="false">基线</button>
+          <button id="filter-hidden-btn" class="filter-tab" type="button" aria-pressed="false">隐藏</button>
         </div>
-        <div class="field-row">
-          <label for="cloud-sync-token">Bearer Token（建议填写）</label>
-          <input
-            id="cloud-sync-token"
-            type="password"
-            autocomplete="off"
-            placeholder="twl_prod_xxx"
-          />
+        <button id="open-stats-view-btn" class="stats-link" type="button">
+          <span>查看统计&nbsp;›</span>
+        </button>
+      </div>
+
+      <section class="list-panel" aria-labelledby="vocab-section-title">
+        <h2 id="vocab-section-title" class="sr-only">当前词库</h2>
+        <div class="vocab-grid-wrap">
+          <div class="vocab-grid-header" aria-hidden="true">
+            <div class="vocab-column-header"><span>单词</span><span>查询</span><span>来源</span><span></span></div>
+            <div class="vocab-column-header"><span>单词</span><span>查询</span><span>来源</span><span></span></div>
+          </div>
+          <div id="vocab-tbody" class="vocab-grid-body" role="list"></div>
         </div>
-      </div>
-      <div class="actions">
-        <button id="save-cloud-sync-btn" class="btn primary" type="button">保存云同步配置</button>
-        <button id="sync-cloud-now-btn" class="btn secondary" type="button">立即同步</button>
-      </div>
-      <p id="cloud-sync-summary" class="summary">未启用</p>
-      <p class="hint">协议是一个简单的 JSON `/sync` 接口，仓库里已附带服务端脚本示例。</p>
+      </section>
     </section>
 
-    <section class="panel weekly-panel">
-      <h2>本周高频 Top 10</h2>
-      <p id="weekly-summary" class="summary">Loading...</p>
-      <div id="weekly-top-list" class="weekly-top-list"></div>
+    <section id="stats-view" class="view subview" hidden>
+      <header class="subview-header">
+        <button id="back-from-stats-btn" class="back-btn" type="button">‹ 返回词库</button>
+        <div>
+          <h2>使用统计</h2>
+          <p>沿用当前自然周统计口径。</p>
+        </div>
+      </header>
+      <section class="subview-card">
+        <div class="section-heading">
+          <h3>本周高频 Top 10</h3>
+          <p id="weekly-summary" class="summary">Loading...</p>
+        </div>
+        <div id="weekly-top-list" class="weekly-top-list"></div>
+      </section>
     </section>
 
-    <section class="panel editor">
-      <h2 id="editor-title">新增或修改词条</h2>
-      <form id="edit-form">
-        <div class="field-row">
-          <label for="word-input">单词</label>
-          <input id="word-input" type="text" placeholder="algorithm" maxlength="80" required />
+    <section id="sync-view" class="view subview" hidden>
+      <header class="subview-header">
+        <button id="back-from-sync-btn" class="back-btn" type="button">‹ 返回词库</button>
+        <div>
+          <h2>多设备同步</h2>
+          <p>让其他设备使用相同的自定义词库。</p>
         </div>
-        <div class="field-row">
-          <label for="def-input">释义</label>
-          <textarea id="def-input" rows="3" placeholder="算法（解决问题的步骤）" required></textarea>
-        </div>
-        <div class="actions">
-          <button id="save-btn" type="submit" class="btn primary">保存</button>
-          <button id="reset-form-btn" type="button" class="btn secondary">清空表单</button>
-        </div>
-      </form>
-      <p class="hint">删除基线词时会进入“已隐藏词”，可随时恢复。</p>
-    </section>
+      </header>
 
-    <section class="panel list-panel">
-      <h2 id="vocab-section-title">当前生效词库</h2>
-      <p id="summary" class="summary">Loading...</p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Word</th>
-              <th>Definition</th>
-              <th>Queries</th>
-              <th>Source</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="vocab-tbody"></tbody>
-        </table>
+      <div class="sync-options">
+        <section class="sync-card">
+          <div class="sync-card-copy">
+            <h3>Chrome 多设备同步</h3>
+            <p>使用 Chrome 自带的同步能力</p>
+            <span>无需服务器</span>
+          </div>
+          <button id="check-manual-sync-btn" class="btn primary" type="button">检查 Chrome 同步</button>
+          <div class="manual-sync-result">
+            <p id="manual-sync-summary" class="summary" aria-live="polite">尚未检查</p>
+            <div class="actions manual-sync-actions">
+              <button id="upload-manual-sync-btn" class="btn secondary" type="button" hidden>
+                使用本机词库上传
+              </button>
+              <button id="download-manual-sync-btn" class="btn secondary" type="button" hidden>
+                使用其他设备词库下载
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="sync-card">
+          <div class="sync-card-copy">
+            <h3>自建服务器同步</h3>
+            <p>通过你自己的服务器同步</p>
+            <span>需要服务器地址和 Token</span>
+          </div>
+          <button id="cloud-settings-toggle-btn" class="btn secondary" type="button" aria-expanded="false">设置</button>
+
+          <div id="cloud-settings-panel" class="cloud-settings" hidden>
+            <div class="cloud-settings-head">
+              <h4>服务器设置</h4>
+              <label class="cloud-toggle">
+                <input id="cloud-sync-enabled" type="checkbox" />
+                <span>启用</span>
+              </label>
+            </div>
+            <div class="cloud-grid">
+              <div class="field-row">
+                <label for="cloud-sync-endpoint">服务器地址</label>
+                <input
+                  id="cloud-sync-endpoint"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://your-domain.example/sync"
+                />
+              </div>
+              <div class="field-row">
+                <label for="cloud-sync-token">Token（建议填写）</label>
+                <input
+                  id="cloud-sync-token"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="twl_prod_xxx"
+                />
+              </div>
+            </div>
+            <div class="actions">
+              <button id="save-cloud-sync-btn" class="btn primary" type="button">保存设置</button>
+              <button id="sync-cloud-now-btn" class="btn secondary" type="button">立即同步</button>
+            </div>
+            <p id="cloud-sync-summary" class="summary">未启用</p>
+          </div>
+        </section>
       </div>
     </section>
 
-    <section class="panel hidden-panel">
-      <h2>已隐藏词</h2>
-      <p id="hidden-summary" class="summary">0</p>
-      <div id="hidden-list" class="hidden-list"></div>
-    </section>
-
-    <section class="panel version-panel">
-      <div class="backup-header">
-        <h2>最近3个词库版本</h2>
-        <p id="version-summary" class="summary">Loading...</p>
-      </div>
-      <p id="active-version-display" class="summary">当前生效：Loading...</p>
-      <div id="version-list" class="version-list"></div>
-      <div class="version-preview">
-        <h3 id="version-preview-title">请选择一个版本</h3>
-        <div id="version-preview-list" class="version-preview-list"></div>
-        <div class="actions">
-          <button id="set-current-version-btn" class="btn primary" type="button" disabled>
-            设置为当前版本
-          </button>
-          <button id="view-live-btn" class="btn secondary" type="button">切回实时词库</button>
-          <button id="clear-backups-btn" class="btn secondary" type="button">清空版本记录</button>
+    <section id="versions-view" class="view subview" hidden>
+      <header class="subview-header">
+        <button id="back-from-versions-btn" class="back-btn" type="button">‹ 返回词库</button>
+        <div>
+          <h2>版本历史</h2>
+          <p>查看词库什么时候变过，并在需要时恢复。</p>
         </div>
-      </div>
+      </header>
+
+      <section class="subview-card version-panel">
+        <div class="current-version-row">
+          <span>当前</span>
+          <strong id="active-version-display">Loading...</strong>
+        </div>
+        <div class="version-heading-row">
+          <h3>最近 3 个版本</h3>
+          <p id="version-summary" class="summary">Loading...</p>
+        </div>
+        <div id="version-list" class="version-list"></div>
+        <div class="version-preview">
+          <h3 id="version-preview-title">请选择一个版本</h3>
+          <div id="version-preview-list" class="version-preview-list"></div>
+          <div class="actions version-actions">
+            <button id="set-current-version-btn" class="btn primary" type="button" disabled>恢复此版本</button>
+            <button id="view-live-btn" class="btn secondary" type="button">取消预览</button>
+            <button id="clear-backups-btn" class="text-danger-btn" type="button">清空版本记录</button>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
+
+  <div id="drawer-layer" class="drawer-layer" hidden>
+    <button id="drawer-backdrop" class="drawer-backdrop" type="button" aria-label="关闭词条详情"></button>
+    <aside id="word-drawer" class="word-drawer" aria-labelledby="drawer-title">
+      <header class="drawer-header">
+        <h2 id="drawer-title">词条详情</h2>
+        <button id="close-drawer-btn" class="drawer-close" type="button" aria-label="关闭">×</button>
+      </header>
+
+      <div id="word-detail-view" class="drawer-content">
+        <dl class="detail-list">
+          <div>
+            <dt>释义</dt>
+            <dd id="detail-definition">—</dd>
+          </div>
+          <div>
+            <dt>来源</dt>
+            <dd id="detail-source">—</dd>
+          </div>
+          <div>
+            <dt>查询次数</dt>
+            <dd id="detail-count">0</dd>
+          </div>
+        </dl>
+        <div class="detail-primary-action">
+          <button id="edit-detail-btn" class="btn primary" type="button">编辑</button>
+        </div>
+        <div class="detail-secondary-actions">
+          <button id="restore-baseline-btn" class="text-action" type="button" hidden>恢复基线</button>
+          <button id="unhide-word-btn" class="text-action" type="button" hidden>取消隐藏</button>
+          <button id="hide-word-btn" class="text-action" type="button" hidden>隐藏词条</button>
+          <button id="delete-word-btn" class="text-action danger" type="button" hidden>删除词条</button>
+        </div>
+      </div>
+
+      <div id="word-edit-view" class="drawer-content" hidden>
+        <h3 id="editor-title">新增词条</h3>
+        <form id="edit-form">
+          <div class="field-row">
+            <label for="word-input">单词</label>
+            <input id="word-input" type="text" placeholder="algorithm" maxlength="80" required />
+          </div>
+          <div class="field-row">
+            <label for="def-input">释义</label>
+            <textarea id="def-input" rows="4" placeholder="算法（解决问题的步骤）" required></textarea>
+          </div>
+          <div class="actions drawer-form-actions">
+            <button id="save-btn" type="submit" class="btn primary">保存</button>
+            <button id="reset-form-btn" type="button" class="btn secondary">取消</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+  </div>
 
   <script src="manual-sync.js"></script>
   <script src="options.js"></script>

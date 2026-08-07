@@ -19,7 +19,11 @@ let deletedSet = new Set();
 let backups = [];
 let rows = [];
 let currentFilter = "";
+let currentSourceFilter = "all";
 let editingWord = null;
+let selectedWord = null;
+let drawerMode = "detail";
+let activeView = "main";
 let selectedVersionId = null;
 let currentVersionId = null;
 let currentVersionMode = "live";
@@ -39,7 +43,6 @@ let manualSyncBusy = false;
 
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("summary");
-const hiddenSummaryEl = document.getElementById("hidden-summary");
 const weeklySummaryEl = document.getElementById("weekly-summary");
 const versionSummaryEl = document.getElementById("version-summary");
 const activeVersionDisplayEl = document.getElementById("active-version-display");
@@ -49,7 +52,6 @@ const manualSyncSummaryEl = document.getElementById("manual-sync-summary");
 
 const searchInput = document.getElementById("search-input");
 const tbody = document.getElementById("vocab-tbody");
-const hiddenListEl = document.getElementById("hidden-list");
 const weeklyTopListEl = document.getElementById("weekly-top-list");
 const versionListEl = document.getElementById("version-list");
 const versionPreviewTitleEl = document.getElementById("version-preview-title");
@@ -71,6 +73,36 @@ const syncCloudNowBtn = document.getElementById("sync-cloud-now-btn");
 const checkManualSyncBtn = document.getElementById("check-manual-sync-btn");
 const uploadManualSyncBtn = document.getElementById("upload-manual-sync-btn");
 const downloadManualSyncBtn = document.getElementById("download-manual-sync-btn");
+
+const mainViewEl = document.getElementById("main-view");
+const statsViewEl = document.getElementById("stats-view");
+const syncViewEl = document.getElementById("sync-view");
+const versionsViewEl = document.getElementById("versions-view");
+const topbarActionsEl = document.getElementById("topbar-actions");
+const moreMenuBtn = document.getElementById("more-menu-btn");
+const maintenanceMenuEl = document.getElementById("maintenance-menu");
+const cloudSettingsToggleBtn = document.getElementById("cloud-settings-toggle-btn");
+const cloudSettingsPanelEl = document.getElementById("cloud-settings-panel");
+
+const filterButtons = {
+  all: document.getElementById("filter-all-btn"),
+  custom: document.getElementById("filter-custom-btn"),
+  base: document.getElementById("filter-base-btn"),
+  hidden: document.getElementById("filter-hidden-btn"),
+};
+
+const drawerLayerEl = document.getElementById("drawer-layer");
+const drawerTitleEl = document.getElementById("drawer-title");
+const wordDetailViewEl = document.getElementById("word-detail-view");
+const wordEditViewEl = document.getElementById("word-edit-view");
+const detailDefinitionEl = document.getElementById("detail-definition");
+const detailSourceEl = document.getElementById("detail-source");
+const detailCountEl = document.getElementById("detail-count");
+const editDetailBtn = document.getElementById("edit-detail-btn");
+const restoreBaselineBtn = document.getElementById("restore-baseline-btn");
+const unhideWordBtn = document.getElementById("unhide-word-btn");
+const hideWordBtn = document.getElementById("hide-word-btn");
+const deleteWordBtn = document.getElementById("delete-word-btn");
 
 function normalizeWord(raw) {
   const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
@@ -175,6 +207,7 @@ function makeId() {
 }
 
 function setStatus(text, isError = false) {
+  statusEl.hidden = false;
   statusEl.textContent = text;
   statusEl.style.color = isError ? "#b91c1c" : "#475569";
   statusEl.style.background = isError ? "#fee2e2" : "#edf2f7";
@@ -211,7 +244,12 @@ function renderCloudSyncPanel() {
     : "未配置端点";
 
   if (!cloudSyncEnabled) {
-    cloudSyncSummaryEl.textContent = "当前关闭。保存同一个 endpoint/token 到多台设备后即可共享词库。";
+    cloudSyncSummaryEl.textContent = "当前关闭。多台设备使用相同的服务器设置后即可共享词库。";
+    cloudSettingsToggleBtn.textContent = cloudSettingsPanelEl.hidden
+      ? cloudSyncEndpoint
+        ? "查看设置"
+        : "设置"
+      : "收起设置";
     return;
   }
 
@@ -231,6 +269,46 @@ function renderCloudSyncPanel() {
     parts.push(`设备ID: ${cloudSyncDeviceId.slice(0, 8)}`);
   }
   cloudSyncSummaryEl.textContent = parts.join(" | ");
+  cloudSettingsToggleBtn.textContent = cloudSettingsPanelEl.hidden ? "查看设置" : "收起设置";
+}
+
+function showView(viewName) {
+  activeView = ["stats", "sync", "versions"].includes(viewName) ? viewName : "main";
+  mainViewEl.hidden = activeView !== "main";
+  statsViewEl.hidden = activeView !== "stats";
+  syncViewEl.hidden = activeView !== "sync";
+  versionsViewEl.hidden = activeView !== "versions";
+  summaryEl.hidden = activeView !== "main";
+  topbarActionsEl.hidden = activeView !== "main";
+  maintenanceMenuEl.hidden = true;
+  moreMenuBtn.setAttribute("aria-expanded", "false");
+  closeDrawer();
+
+  if (activeView === "main" && pageViewMode === "version") {
+    pageViewMode = "live";
+    renderAll();
+  }
+  if (typeof window.scrollTo === "function") {
+    window.scrollTo(0, 0);
+  }
+}
+
+function toggleMaintenanceMenu() {
+  const opening = maintenanceMenuEl.hidden;
+  maintenanceMenuEl.hidden = !opening;
+  moreMenuBtn.setAttribute("aria-expanded", opening ? "true" : "false");
+}
+
+function toggleCloudSettings() {
+  const opening = cloudSettingsPanelEl.hidden;
+  cloudSettingsPanelEl.hidden = !opening;
+  cloudSettingsToggleBtn.setAttribute("aria-expanded", opening ? "true" : "false");
+  cloudSettingsToggleBtn.textContent = opening ? "收起设置" : cloudSyncEndpoint || cloudSyncEnabled ? "查看设置" : "设置";
+}
+
+function setSourceFilter(filterName) {
+  currentSourceFilter = Object.prototype.hasOwnProperty.call(filterButtons, filterName) ? filterName : "all";
+  renderTable();
 }
 
 function storageGet(areaName, keys) {
@@ -382,7 +460,7 @@ function renderManualSyncContext(context) {
   manualSyncContext = context;
   hideManualSyncActions();
   uploadManualSyncBtn.textContent = "使用本机词库上传";
-  downloadManualSyncBtn.textContent = "使用共享词库下载";
+  downloadManualSyncBtn.textContent = "使用其他设备词库下载";
 
   const localLabel = `本机：${manualSyncCounts(context.localState)}`;
   const remoteLabel = context.remote
@@ -432,11 +510,11 @@ function renderManualSyncContext(context) {
 function manualSyncErrorMessage(err) {
   const code = err && err.message ? err.message : String(err);
   const messages = {
-    snapshot_exceeds_safe_sync_capacity: "词库快照超过 Chrome Sync 的安全容量，请先导出 JSON 并精简词库",
+    snapshot_exceeds_safe_sync_capacity: "词库快照超过 Chrome Sync 的安全容量，请先导出备份并精简词库",
     snapshot_item_exceeds_sync_quota: "词库分块仍超过 Chrome Sync 单项配额",
     sync_snapshot_hash_mismatch: "共享快照哈希不一致，已拒绝读取",
     sync_chunk_missing: "共享快照缺少分块，已拒绝读取",
-    sync_snapshot_invalid_json: "共享快照不是有效 JSON，已拒绝读取",
+    sync_snapshot_invalid_json: "共享快照格式无效，已拒绝读取",
     sync_snapshot_not_canonical: "共享快照格式异常，已拒绝读取",
     unsupported_sync_schema: "共享快照版本暂不受支持",
     sync_changed_during_upload: "上传期间共享快照被另一台设备修改，请重新检查",
@@ -693,119 +771,111 @@ function mergeRows(viewCustom, viewDeleted) {
   rows = Object.values(merged).sort((a, b) => b.count - a.count || a.word.localeCompare(b.word));
 }
 
+function hiddenRowsForState(viewCustom, viewDeleted) {
+  const customMap = viewCustom || customVocab;
+  const deletedWordSet = viewDeleted || deletedSet;
+  return Array.from(deletedWordSet)
+    .map((word) => {
+      const hasBase = Object.prototype.hasOwnProperty.call(baseVocab, word);
+      const hasCustom = Object.prototype.hasOwnProperty.call(customMap, word);
+      return {
+        word,
+        definition: hasCustom ? customMap[word] : baseVocab[word] || "",
+        count: wordCounts[word] || 0,
+        source: hasBase && hasCustom ? "覆盖基线" : hasBase ? "基线" : "自定义",
+        hasBase,
+        hasCustom,
+        hidden: true,
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word));
+}
+
 function rowMatchesFilter(row) {
   if (!currentFilter) return true;
   return row.word.includes(currentFilter) || row.definition.toLowerCase().includes(currentFilter);
 }
 
-function renderTable() {
-  tbody.innerHTML = "";
-  const filtered = rows.filter(rowMatchesFilter);
-
-  if (filtered.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 5;
-    td.className = "empty";
-    td.textContent = "没有匹配的词条";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
+function rowsForCurrentSourceFilter() {
+  if (currentSourceFilter === "hidden") {
+    return hiddenRowsForState(customVocab, deletedSet);
   }
-
-  for (const row of filtered) {
-    const tr = document.createElement("tr");
-
-    const tdWord = document.createElement("td");
-    tdWord.textContent = row.word;
-    tr.appendChild(tdWord);
-
-    const tdDef = document.createElement("td");
-    tdDef.textContent = row.definition;
-    tr.appendChild(tdDef);
-
-    const tdCount = document.createElement("td");
-    tdCount.textContent = String(row.count || 0);
-    tr.appendChild(tdCount);
-
-    const tdSource = document.createElement("td");
-    tdSource.textContent = row.source;
-    tr.appendChild(tdSource);
-
-    const tdAction = document.createElement("td");
-    if (isReadOnlyView) {
-      tdAction.className = "empty";
-      tdAction.textContent = "预览只读";
-      tr.appendChild(tdAction);
-      tbody.appendChild(tr);
-      continue;
-    }
-
-    const actionWrap = document.createElement("div");
-    actionWrap.className = "row-actions";
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "small-btn";
-    editBtn.textContent = "编辑";
-    editBtn.addEventListener("click", () => startEdit(row.word, row.definition));
-    actionWrap.appendChild(editBtn);
-
-    if (row.hasBase && row.hasCustom) {
-      const restoreBaseBtn = document.createElement("button");
-      restoreBaseBtn.type = "button";
-      restoreBaseBtn.className = "small-btn";
-      restoreBaseBtn.textContent = "恢复基线";
-      restoreBaseBtn.addEventListener("click", () => restoreBaseline(row.word));
-      actionWrap.appendChild(restoreBaseBtn);
-    }
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "small-btn danger";
-    deleteBtn.textContent = "删除";
-    deleteBtn.addEventListener("click", () => removeWord(row.word));
-    actionWrap.appendChild(deleteBtn);
-
-    tdAction.appendChild(actionWrap);
-    tr.appendChild(tdAction);
-
-    tbody.appendChild(tr);
+  if (currentSourceFilter === "custom") {
+    return rows.filter((row) => row.hasCustom);
   }
+  if (currentSourceFilter === "base") {
+    return rows.filter((row) => row.hasBase && !row.hasCustom);
+  }
+  return rows;
 }
 
-function renderHidden(viewDeletedSet) {
-  const deletedWordSet = viewDeletedSet || deletedSet;
-  hiddenListEl.innerHTML = "";
-  const words = Array.from(deletedWordSet).sort((a, b) => a.localeCompare(b));
-  hiddenSummaryEl.textContent = `${words.length} 个已隐藏词`;
+function renderFilterState() {
+  for (const [filterName, button] of Object.entries(filterButtons)) {
+    const active = filterName === currentSourceFilter;
+    button.className = `filter-tab${active ? " active" : ""}`;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  const titles = {
+    all: "当前词库",
+    custom: "自定义词",
+    base: "基线词",
+    hidden: "隐藏词",
+  };
+  vocabSectionTitleEl.textContent = titles[currentSourceFilter] || titles.all;
+}
 
-  if (words.length === 0) {
+function renderTable() {
+  tbody.innerHTML = "";
+  renderFilterState();
+  const filtered = rowsForCurrentSourceFilter().filter(rowMatchesFilter);
+
+  if (filtered.length === 0) {
     const empty = document.createElement("p");
-    empty.className = "summary";
-    empty.textContent = "暂无";
-    hiddenListEl.appendChild(empty);
+    empty.className = "empty";
+    empty.textContent = currentSourceFilter === "hidden" ? "没有隐藏词条" : "没有匹配的词条";
+    tbody.appendChild(empty);
     return;
   }
 
-  for (const word of words) {
-    const item = document.createElement("div");
-    item.className = "hidden-item";
+  const makeItem = (row) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "vocab-item-row";
+    item.setAttribute("role", "listitem");
+    item.setAttribute("aria-label", `${row.word}，查询 ${row.count || 0} 次，${row.source}`);
+    item.addEventListener("click", () => openWordDetail(row.word));
 
-    const text = document.createElement("span");
-    text.textContent = word;
-    item.appendChild(text);
+    const word = document.createElement("span");
+    word.className = "row-word";
+    word.textContent = row.word;
 
-    if (!isReadOnlyView) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "small-btn";
-      btn.textContent = "恢复";
-      btn.addEventListener("click", () => unhideWord(word));
-      item.appendChild(btn);
-    }
+    const count = document.createElement("span");
+    count.className = "row-count";
+    count.textContent = String(row.count || 0);
 
-    hiddenListEl.appendChild(item);
+    const source = document.createElement("span");
+    const sourceClass = row.source === "覆盖基线" ? "override" : row.source === "自定义" ? "custom" : "base";
+    source.className = `source-label ${sourceClass}${row.hidden ? " hidden-source" : ""}`;
+    source.textContent = row.hidden ? `隐藏 · ${row.source}` : row.source;
+
+    const chevron = document.createElement("span");
+    chevron.className = "row-chevron";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.textContent = "›";
+
+    item.appendChild(word);
+    item.appendChild(count);
+    item.appendChild(source);
+    item.appendChild(chevron);
+    return item;
+  };
+
+  for (let index = 0; index < filtered.length; index += 2) {
+    const pair = document.createElement("div");
+    pair.className = "vocab-pair-row";
+    pair.appendChild(makeItem(filtered[index]));
+    if (filtered[index + 1]) pair.appendChild(makeItem(filtered[index + 1]));
+    tbody.appendChild(pair);
   }
 }
 
@@ -927,19 +997,45 @@ function renderEditorReadonlyState(viewState) {
 }
 
 function renderActiveVersionDisplay(list) {
+  const activeCount = Object.keys(currentEffectiveVocab()).length;
   if (currentVersionMode === "version" && currentVersionId) {
     const currentSnapshot =
       backups.find((item) => item.id === currentVersionId) ||
       list.find((item) => item.id === currentVersionId) ||
       null;
     if (currentSnapshot) {
-      activeVersionDisplayEl.textContent = `当前生效：版本 ${snapshotDisplayText(currentSnapshot)}`;
+      activeVersionDisplayEl.textContent = `${activeCount} 个生效词 · 历史版本 ${formatTime(currentSnapshot.at)}`;
       return;
     }
-    activeVersionDisplayEl.textContent = `当前生效：历史版本 (${currentVersionId.slice(0, 8)})`;
+    activeVersionDisplayEl.textContent = `${activeCount} 个生效词 · 历史版本`;
     return;
   }
-  activeVersionDisplayEl.textContent = "当前生效：实时词库（手动编辑/导入后的最新状态）";
+  activeVersionDisplayEl.textContent = `${activeCount} 个生效词`;
+}
+
+function versionDiffRows(snapshot) {
+  const versionVocab = snapshotToVocab(snapshot);
+  const liveVocab = currentEffectiveVocab();
+  const words = new Set([...Object.keys(versionVocab), ...Object.keys(liveVocab)]);
+  const diffs = [];
+
+  for (const word of words) {
+    const versionHas = Object.prototype.hasOwnProperty.call(versionVocab, word);
+    const liveHas = Object.prototype.hasOwnProperty.call(liveVocab, word);
+    if (!versionHas && liveHas) {
+      diffs.push({ kind: "当前新增", word, detail: liveVocab[word] });
+      continue;
+    }
+    if (versionHas && !liveHas) {
+      diffs.push({ kind: "当前已移除", word, detail: versionVocab[word] });
+      continue;
+    }
+    if (versionVocab[word] !== liveVocab[word]) {
+      diffs.push({ kind: "释义已修改", word, detail: `${versionVocab[word]} → ${liveVocab[word]}` });
+    }
+  }
+
+  return diffs.sort((a, b) => a.kind.localeCompare(b.kind) || a.word.localeCompare(b.word));
 }
 
 function renderVersionPreview(list) {
@@ -958,45 +1054,60 @@ function renderVersionPreview(list) {
   }
 
   const isCurrent = currentVersionMode === "version" && currentVersionId === selected.id;
-  setCurrentVersionBtn.textContent = isCurrent ? "已是当前版本" : "设置为当前版本";
+  setCurrentVersionBtn.textContent = isCurrent ? "已是当前版本" : "恢复此版本";
   setCurrentVersionBtn.disabled = isCurrent;
-  versionPreviewTitleEl.textContent =
-    pageViewMode === "version"
-      ? `版本 ${snapshotDisplayText(selected)}`
-      : `版本 ${snapshotDisplayText(selected)}（未应用到上方）`;
+  versionPreviewTitleEl.textContent = `${formatTime(selected.at)} · 与当前词库相比`;
 
-  const vocab = snapshotToVocab(selected);
-  const topRows = rankRowsForVocab(vocab, 8, true);
-
-  if (topRows.length === 0) {
+  const diffs = versionDiffRows(selected);
+  if (diffs.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty";
-    empty.textContent = "该版本暂无可排序词条。";
+    empty.textContent = "这个版本与当前词库没有差异。";
     versionPreviewListEl.appendChild(empty);
     return;
   }
 
-  topRows.forEach((row, idx) => {
-    const line = document.createElement("div");
-    line.className = "version-preview-row";
+  const added = diffs.filter((row) => row.kind === "当前新增").length;
+  const removed = diffs.filter((row) => row.kind === "当前已移除").length;
+  const modified = diffs.filter((row) => row.kind === "释义已修改").length;
+  const summary = document.createElement("p");
+  summary.className = "version-diff-summary";
+  summary.textContent = `当前新增 ${added} · 当前移除 ${removed} · 释义修改 ${modified}`;
+  versionPreviewListEl.appendChild(summary);
 
-    const rank = document.createElement("span");
-    rank.className = "rank";
-    rank.textContent = `#${idx + 1}`;
+  diffs.forEach((row) => {
+    const line = document.createElement("div");
+    line.className = "version-diff-row";
+
+    const kind = document.createElement("span");
+    kind.className = "version-diff-kind";
+    kind.textContent = row.kind;
 
     const word = document.createElement("span");
-    word.className = "word";
-    word.textContent = `${row.word} · ${shortText(row.definition, 34)}`;
+    word.className = "version-diff-word";
+    word.textContent = row.word;
 
-    const count = document.createElement("span");
-    count.className = "count";
-    count.textContent = row.weekCount > 0 ? `${row.weekCount}次` : `${row.totalCount}次(总)`;
+    const detail = document.createElement("span");
+    detail.className = "version-diff-detail";
+    detail.textContent = shortText(row.detail, 72);
 
-    line.appendChild(rank);
+    line.appendChild(kind);
     line.appendChild(word);
-    line.appendChild(count);
+    line.appendChild(detail);
     versionPreviewListEl.appendChild(line);
   });
+}
+
+function formatVersionLabel(label) {
+  const text = String(label || "manual");
+  if (text.startsWith("upsert:")) return `修改 ${text.slice(7)}`;
+  if (text.startsWith("delete:")) return `删除 ${text.slice(7)}`;
+  if (text.startsWith("restore_base:")) return `恢复基线 ${text.slice(13)}`;
+  if (text.startsWith("unhide:")) return `取消隐藏 ${text.slice(7)}`;
+  if (text.startsWith("before_manual_sync_download:")) return "Chrome 同步前备份";
+  if (text === "before_set_current") return "恢复版本前备份";
+  if (text === "import_json") return "导入备份";
+  return text === "manual" ? "手动变更" : text;
 }
 
 function renderVersions() {
@@ -1083,7 +1194,7 @@ function renderVersions() {
 
     const label = document.createElement("p");
     label.className = "label";
-    label.textContent = snapshot.label || "manual";
+    label.textContent = formatVersionLabel(snapshot.label);
     item.appendChild(label);
 
     versionListEl.appendChild(item);
@@ -1093,16 +1204,14 @@ function renderVersions() {
 }
 
 function renderSummary(viewState) {
-  const baseCount = Object.keys(baseVocab).length;
   const customCount = Object.keys(viewState.custom || {}).length;
   const activeCount = rows.length;
-  const totalQueries = rows.reduce((sum, row) => sum + (row.count || 0), 0);
+  const hiddenCount = viewState.deleted.size;
   const viewPrefix =
     viewState.mode === "version" && viewState.snapshot
-      ? `预览版本 ${snapshotDisplayText(viewState.snapshot)} | `
+      ? `预览版本 ${formatTime(viewState.snapshot.at)} · `
       : "";
-  summaryEl.textContent =
-    `${viewPrefix}生效 ${activeCount} | 基线 ${baseCount} | 自定义 ${customCount} | 查询总次数 ${totalQueries}`;
+  summaryEl.textContent = `${viewPrefix}${activeCount} 生效 · ${customCount} 自定义 · ${hiddenCount} 隐藏`;
 }
 
 function renderAll() {
@@ -1113,20 +1222,98 @@ function renderAll() {
   renderEditorReadonlyState(viewState);
   renderSummary(viewState);
   renderTable();
-  renderHidden(viewState.deleted);
   renderWeeklyTop(viewState.effective);
   renderVersions();
+  if (!drawerLayerEl.hidden && selectedWord) {
+    renderWordDrawer();
+  }
+}
+
+function getWordRow(word) {
+  return rows.find((row) => row.word === word) || hiddenRowsForState(customVocab, deletedSet).find((row) => row.word === word) || null;
+}
+
+function openDrawer() {
+  drawerLayerEl.hidden = false;
+}
+
+function closeDrawer() {
+  drawerLayerEl.hidden = true;
+  selectedWord = null;
+  editingWord = null;
+  drawerMode = "detail";
+  wordInput.value = "";
+  defInput.value = "";
+}
+
+function renderWordDrawer() {
+  if (drawerMode === "edit") {
+    wordDetailViewEl.hidden = true;
+    wordEditViewEl.hidden = false;
+    drawerTitleEl.textContent = editingWord || "新增词条";
+    editorTitleEl.textContent = editingWord ? `编辑 ${editingWord}` : "新增词条";
+    return;
+  }
+
+  const row = selectedWord ? getWordRow(selectedWord) : null;
+  if (!row) {
+    closeDrawer();
+    return;
+  }
+
+  wordDetailViewEl.hidden = false;
+  wordEditViewEl.hidden = true;
+  drawerTitleEl.textContent = row.word;
+  detailDefinitionEl.textContent = row.definition || "—";
+  detailCountEl.textContent = String(row.count || 0);
+  if (row.hidden) {
+    detailSourceEl.textContent = `${row.source} · 已隐藏`;
+  } else if (row.hasBase && row.hasCustom) {
+    detailSourceEl.textContent = "基线 · 当前已覆盖";
+  } else {
+    detailSourceEl.textContent = row.source;
+  }
+
+  editDetailBtn.hidden = Boolean(row.hidden);
+  editDetailBtn.textContent = row.hasBase ? "编辑释义" : "编辑";
+  restoreBaselineBtn.hidden = row.hidden || !(row.hasBase && row.hasCustom);
+  unhideWordBtn.hidden = !row.hidden;
+  hideWordBtn.hidden = row.hidden || !row.hasBase;
+  deleteWordBtn.hidden = row.hidden || row.hasBase;
+}
+
+function openWordDetail(word) {
+  const row = getWordRow(word);
+  if (!row) return;
+  selectedWord = word;
+  editingWord = null;
+  drawerMode = "detail";
+  renderWordDrawer();
+  openDrawer();
+}
+
+function startAdd() {
+  if (!ensureLiveEditable()) return;
+  selectedWord = null;
+  editingWord = null;
+  drawerMode = "edit";
+  wordInput.value = "";
+  defInput.value = "";
+  renderWordDrawer();
+  openDrawer();
+  wordInput.focus();
 }
 
 function resetForm() {
   editingWord = null;
-  if (pageViewMode === "version") {
-    editorTitleEl.textContent = "新增或修改词条（版本预览只读）";
-  } else {
-    editorTitleEl.textContent = "新增或修改词条";
-  }
   wordInput.value = "";
   defInput.value = "";
+  if (selectedWord && getWordRow(selectedWord)) {
+    drawerMode = "detail";
+    renderWordDrawer();
+    return;
+  }
+  closeDrawer();
 }
 
 function startEdit(word, definition) {
@@ -1134,10 +1321,13 @@ function startEdit(word, definition) {
     setStatus("当前在版本预览模式，请先切回实时词库再编辑", true);
     return;
   }
+  selectedWord = word;
   editingWord = word;
-  editorTitleEl.textContent = `编辑词条: ${word}`;
+  drawerMode = "edit";
   wordInput.value = word;
   defInput.value = definition;
+  renderWordDrawer();
+  openDrawer();
   wordInput.focus();
 }
 
@@ -1358,12 +1548,14 @@ function exportJson() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  setStatus("已导出 JSON");
+  maintenanceMenuEl.hidden = true;
+  moreMenuBtn.setAttribute("aria-expanded", "false");
+  setStatus("已导出备份");
 }
 
 function parseImportPayload(obj) {
   if (!obj || typeof obj !== "object") {
-    throw new Error("JSON 格式错误");
+    throw new Error("备份文件格式错误");
   }
 
   if (obj.custom_vocab || obj.deleted_vocab) {
@@ -1388,7 +1580,7 @@ function importJson(file) {
       const parsed = JSON.parse(String(reader.result || "{}"));
       const incoming = parseImportPayload(parsed);
 
-      if (!window.confirm("导入会和当前词库合并，同名词条将被覆盖。继续？")) {
+      if (!window.confirm("导入备份会和当前词库合并，同名词条将被覆盖。继续？")) {
         return;
       }
 
@@ -1413,7 +1605,7 @@ function saveCloudSyncSettings() {
   const token = sanitizeCloudToken(cloudSyncTokenInput.value);
 
   if (enabled && !endpoint) {
-    setStatus("启用云同步前，请先填写有效的 http/https 同步端点", true);
+    setStatus("启用自建服务器同步前，请先填写有效的 http/https 同步端点", true);
     return;
   }
   if (endpointRaw && !endpoint) {
@@ -1432,7 +1624,7 @@ function saveCloudSyncSettings() {
       saveCloudSyncBtn.disabled = false;
       const lastErr = chrome.runtime.lastError;
       if (lastErr) {
-        setStatus(`保存云同步配置失败: ${lastErr.message}`, true);
+        setStatus(`保存自建服务器同步设置失败: ${lastErr.message}`, true);
         return;
       }
 
@@ -1440,14 +1632,18 @@ function saveCloudSyncSettings() {
       cloudSyncEndpoint = endpoint;
       cloudSyncToken = token;
       renderCloudSyncPanel();
-      setStatus(enabled ? "云同步配置已保存，可点击“立即同步”验证连接" : "已保存云同步配置（当前关闭）");
+      setStatus(
+        enabled
+          ? "自建服务器同步设置已保存，可点击“立即同步”验证连接"
+          : "已保存自建服务器同步设置（当前关闭）"
+      );
     }
   );
 }
 
 function syncCloudNow() {
   if (!cloudSyncEnabledInput.checked) {
-    setStatus("请先启用云同步", true);
+    setStatus("请先启用自建服务器同步", true);
     return;
   }
 
@@ -1458,25 +1654,27 @@ function syncCloudNow() {
   }
 
   syncCloudNowBtn.disabled = true;
-  setStatus("正在执行云端同步...");
+  setStatus("正在执行自建服务器同步...");
   chrome.runtime.sendMessage({ action: "sync_cloud_now" }, (res) => {
     updateCloudSyncActionState();
     const lastErr = chrome.runtime.lastError;
     if (lastErr) {
-      setStatus(`云同步请求失败: ${lastErr.message}`, true);
+      setStatus(`自建服务器同步请求失败: ${lastErr.message}`, true);
       return;
     }
 
     if (!res || res.ok === false) {
-      setStatus(`云同步失败: ${(res && res.error) || "unknown_error"}`, true);
+      setStatus(`自建服务器同步失败: ${(res && res.error) || "unknown_error"}`, true);
       return;
     }
 
     if (res.skipped === "disabled") {
-      setStatus("云同步未启用", true);
+      setStatus("自建服务器同步未启用", true);
       return;
     }
-    setStatus(res.changed ? "云同步完成，已合并最新词库" : "云同步完成，没有新增变更");
+    setStatus(
+      res.changed ? "自建服务器同步完成，已合并最新词库" : "自建服务器同步完成，没有新增变更"
+    );
   });
 }
 
@@ -1532,9 +1730,7 @@ function loadStorage(showStatus = true) {
 
     renderAll();
     renderCloudSyncPanel();
-    if (showStatus) {
-      setStatus("已加载词库");
-    }
+    if (showStatus) statusEl.hidden = true;
   });
 }
 
@@ -1557,6 +1753,37 @@ function bindEvents() {
 
   editForm.addEventListener("submit", saveFromForm);
   resetFormBtn.addEventListener("click", resetForm);
+  document.getElementById("add-word-btn").addEventListener("click", startAdd);
+  document.getElementById("close-drawer-btn").addEventListener("click", closeDrawer);
+  document.getElementById("drawer-backdrop").addEventListener("click", closeDrawer);
+  moreMenuBtn.addEventListener("click", toggleMaintenanceMenu);
+  document.getElementById("open-stats-view-btn").addEventListener("click", () => showView("stats"));
+  document.getElementById("open-sync-view-btn").addEventListener("click", () => showView("sync"));
+  document.getElementById("open-versions-view-btn").addEventListener("click", () => showView("versions"));
+  document.getElementById("back-from-stats-btn").addEventListener("click", () => showView("main"));
+  document.getElementById("back-from-sync-btn").addEventListener("click", () => showView("main"));
+  document.getElementById("back-from-versions-btn").addEventListener("click", () => showView("main"));
+  cloudSettingsToggleBtn.addEventListener("click", toggleCloudSettings);
+  filterButtons.all.addEventListener("click", () => setSourceFilter("all"));
+  filterButtons.custom.addEventListener("click", () => setSourceFilter("custom"));
+  filterButtons.base.addEventListener("click", () => setSourceFilter("base"));
+  filterButtons.hidden.addEventListener("click", () => setSourceFilter("hidden"));
+  editDetailBtn.addEventListener("click", () => {
+    const row = selectedWord ? getWordRow(selectedWord) : null;
+    if (row && !row.hidden) startEdit(row.word, row.definition);
+  });
+  restoreBaselineBtn.addEventListener("click", () => {
+    if (selectedWord) restoreBaseline(selectedWord);
+  });
+  unhideWordBtn.addEventListener("click", () => {
+    if (selectedWord) unhideWord(selectedWord);
+  });
+  hideWordBtn.addEventListener("click", () => {
+    if (selectedWord) removeWord(selectedWord);
+  });
+  deleteWordBtn.addEventListener("click", () => {
+    if (selectedWord) removeWord(selectedWord);
+  });
   document.getElementById("export-btn").addEventListener("click", exportJson);
   document.getElementById("clear-backups-btn").addEventListener("click", clearBackups);
   setCurrentVersionBtn.addEventListener("click", setCurrentVersion);
@@ -1570,6 +1797,8 @@ function bindEvents() {
   cloudSyncEndpointInput.addEventListener("input", updateCloudSyncActionState);
 
   document.getElementById("import-input").addEventListener("change", (evt) => {
+    maintenanceMenuEl.hidden = true;
+    moreMenuBtn.setAttribute("aria-expanded", "false");
     const file = evt.target.files && evt.target.files[0];
     if (!file) return;
     importJson(file);
@@ -1582,7 +1811,7 @@ function bindEvents() {
     if (changes.custom_vocab || changes.deleted_vocab) {
       manualSyncContext = null;
       hideManualSyncActions();
-      manualSyncSummaryEl.textContent = "本机词库已变化，请点击“检查同步状态”。";
+      manualSyncSummaryEl.textContent = "本机词库已变化，请点击“检查 Chrome 同步”。";
     }
 
     const hasCountChange = Object.entries(changes).some(([key, diff]) => {

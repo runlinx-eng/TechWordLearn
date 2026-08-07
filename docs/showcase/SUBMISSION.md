@@ -104,7 +104,7 @@ A Chrome extension that highlights technical terms inside real webpages, explain
 ```text
 TechWordLearn helps people learn technical English without leaving the material they are already reading. It highlights recognized terms directly in documentation, articles, repositories, and product pages, then provides contextual definitions and pronunciation on demand.
 
-The extension also tracks repeated lookups, supports custom and hidden vocabulary, and provides import, export, backups, version snapshots, browser sync, and optional self-hosted synchronization. Page matching happens locally, and no OpenAI API key is required at runtime.
+The extension also tracks repeated lookups, supports custom and hidden vocabulary, and provides backup import/export, version snapshots, browser sync, and optional self-hosted synchronization. Page matching happens locally, and no OpenAI API key is required at runtime.
 
 Codex helped evolve the project from a personal browser tool into a more coherent, inspectable open-source prototype by supporting code analysis, bounded implementation, debugging, validation, and documentation.
 ```
@@ -121,7 +121,7 @@ Replace this with your preferred real name or social identity before submission 
 
 ### Public cover image
 
-Target path after adding the real screenshot:
+Current repository path for the cover image:
 
 ```text
 https://raw.githubusercontent.com/runlinx-eng/TechWordLearn/main/docs/showcase/techwordlearn-cover.png

@@ -16,7 +16,7 @@
 Suggested description:
 
 ```text
-Learn technical English while browsing: in-page term highlights, contextual definitions, pronunciation, lookup tracking, and personal vocabulary.
+在真实英文技术内容中学习技术英语：网页词汇高亮、中文释义、发音、查询统计与个人词库管理。
 ```
 
 Suggested topics:
@@ -37,14 +37,14 @@ GitHub About fields must be changed manually in the repository interface.
 
 ## Validation
 
-- [ ] `node --check background.js content.js popup.js manual-sync.js options.js`
+- [ ] `for file in background.js content.js popup.js manual-sync.js options.js; do node --check "$file"; done`
 - [ ] `node --test tests/*.test.cjs`
 - [ ] Load from a fresh Chrome profile
 - [ ] Open a normal HTTPS technical page
 - [ ] Verify highlight, tooltip, and pronunciation
 - [ ] Verify popup statistics
 - [ ] Add, edit, hide, and restore a term
-- [ ] Export and re-import vocabulary JSON
+- [ ] Export and re-import a vocabulary backup
 - [ ] Confirm cloud sync is not enabled without an explicit user choice
 - [ ] Inspect the extension service worker for errors
 - [ ] Verify the cover image loads publicly

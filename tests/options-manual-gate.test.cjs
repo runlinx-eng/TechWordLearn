@@ -20,15 +20,33 @@ class FakeElement {
     this.hidden = id === "upload-manual-sync-btn" || id === "download-manual-sync-btn";
     this.files = [];
     this.listeners = new Map();
+    this.attributes = new Map();
   }
 
   addEventListener(type, listener) {
     this.listeners.set(type, listener);
   }
 
+  set innerHTML(value) {
+    this._innerHTML = String(value);
+    if (this._innerHTML === "") this.children = [];
+  }
+
+  get innerHTML() {
+    return this._innerHTML || "";
+  }
+
   appendChild(child) {
     this.children.push(child);
     return child;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
   }
 
   remove() {}
@@ -75,7 +93,7 @@ function fakeStorageArea(store, counters) {
   };
 }
 
-function makeHarness() {
+function makeHarness({ baseFixture = {}, localFixture = {} } = {}) {
   const elements = new Map();
   const getElement = (id) => {
     if (!elements.has(id)) elements.set(id, new FakeElement(id));
@@ -85,6 +103,7 @@ function makeHarness() {
     custom_vocab: { kernel: "内核", latency: "延迟" },
     deleted_vocab: [],
     vocab_backups: [],
+    ...localFixture,
   };
   const syncStore = {};
   const localCounters = { get: 0, set: 0, remove: 0 };
@@ -105,7 +124,7 @@ function makeHarness() {
     clearTimeout,
     console,
     crypto: webcrypto,
-    fetch: async () => ({ json: async () => ({}) }),
+    fetch: async () => ({ json: async () => ({ ...baseFixture }) }),
     setTimeout,
     document: {
       body: new FakeElement("body"),
@@ -176,4 +195,57 @@ test("profile sync remains untouched until the user invokes manual controls", as
   assert.equal(harness.localStore.twl_manual_sync_base_revision, 1);
   assert.equal(harness.runtimeCounters.sendMessage, 0);
   assert.match(harness.elements.get("status").textContent, /手动上传完成/);
+});
+
+test("dense list filters and detail drawer are read-only until an explicit action", async () => {
+  const harness = makeHarness({
+    baseFixture: {
+      commit: "提交（保存代码快照）",
+      kernel: "核心部分",
+      scope: "范围",
+    },
+    localFixture: {
+      custom_vocab: { kernel: "内核", latency: "延迟" },
+      deleted_vocab: ["scope"],
+      commit: 2,
+      kernel: 2,
+      latency: 5,
+      scope: 9,
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const tbody = harness.elements.get("vocab-tbody");
+  const renderedWords = () =>
+    tbody.children.flatMap((pair) => pair.children.map((item) => item.children[0].textContent));
+  assert.deepEqual(renderedWords(), ["latency", "commit", "kernel"]);
+  assert.equal(harness.elements.get("summary").textContent, "3 生效 · 2 自定义 · 1 隐藏");
+
+  const writesBeforeBrowsing = harness.localCounters.set;
+  harness.context.setSourceFilter("custom");
+  assert.deepEqual(renderedWords(), ["latency", "kernel"]);
+  harness.context.setSourceFilter("base");
+  assert.deepEqual(renderedWords(), ["commit"]);
+  harness.context.setSourceFilter("hidden");
+  assert.deepEqual(renderedWords(), ["scope"]);
+
+  harness.context.openWordDetail("kernel");
+  assert.equal(harness.elements.get("detail-source").textContent, "基线 · 当前已覆盖");
+  assert.equal(harness.elements.get("restore-baseline-btn").hidden, false);
+  assert.equal(harness.elements.get("hide-word-btn").hidden, false);
+  assert.equal(harness.elements.get("delete-word-btn").hidden, true);
+
+  harness.context.openWordDetail("latency");
+  assert.equal(harness.elements.get("detail-source").textContent, "自定义");
+  assert.equal(harness.elements.get("hide-word-btn").hidden, true);
+  assert.equal(harness.elements.get("delete-word-btn").hidden, false);
+
+  harness.context.openWordDetail("scope");
+  assert.equal(harness.elements.get("detail-source").textContent, "基线 · 已隐藏");
+  assert.equal(harness.elements.get("edit-detail-btn").hidden, true);
+  assert.equal(harness.elements.get("unhide-word-btn").hidden, false);
+  assert.equal(harness.localCounters.set, writesBeforeBrowsing);
+  assert.equal(harness.syncCounters.get, 0);
+  assert.equal(harness.syncCounters.set, 0);
 });

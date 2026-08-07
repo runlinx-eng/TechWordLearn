@@ -239,7 +239,7 @@ async function syncViaCloud(reason) {
   }
 
   if (!config.endpoint) {
-    const message = "云同步已开启，但未配置有效的同步端点";
+    const message = "自建服务器同步已开启，但未配置有效的同步端点";
     await setCloudSyncStatus({
       [CLOUD_SYNC_STATUS_KEY]: "error",
       [CLOUD_SYNC_LAST_ERROR_KEY]: message,
@@ -390,7 +390,7 @@ function isInjectableTabUrl(url) {
 }
 
 function isExplicitlyBlockedTabUrl(url) {
-  return /^(about:|chrome:\/\/|chrome-extension:\/\/|devtools:\/\/|atlas:\/\/|edge:\/\/|brave:\/\/)/i.test(
+  return /^(about:|chrome:\/\/|chrome-extension:\/\/|devtools:\/\/|edge:\/\/|brave:\/\/)/i.test(
     String(url || "")
   );
 }

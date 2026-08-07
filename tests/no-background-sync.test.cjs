@@ -20,6 +20,14 @@ test("manifest does not request alarm permission", () => {
   assert.ok(!manifest.permissions.includes("alarms"));
 });
 
+test("runtime contains no Atlas-specific integration", () => {
+  const runtimeFiles = ["manifest.json", "background.js", "content.js", "popup.js", "options.js"];
+  const runtimeSource = runtimeFiles
+    .map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8"))
+    .join("\n");
+  assert.doesNotMatch(runtimeSource, /atlas/i);
+});
+
 test("retired polling and loopback services are absent", () => {
   for (const relativePath of [
     "scripts/vocab-storage-sync-daemon.py",

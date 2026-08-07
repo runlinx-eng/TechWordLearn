@@ -32,7 +32,7 @@ Current product capabilities include:
 - custom vocabulary management;
 - hidden and restored terms;
 - vocabulary backups and repository snapshots;
-- JSON import/export;
+- backup import/export, using JSON as the on-disk format;
 - manual Chrome profile sync with revision, chunk, and hash validation;
 - optional self-hosted cloud sync, triggered only by the user.
 
@@ -73,8 +73,8 @@ Public documentation should focus on the user problem, visible product behavior,
 Minimum static validation:
 
 ```bash
-node --check background.js content.js popup.js manual-sync.js options.js
-node --test tests/manual-sync.test.cjs
+for file in background.js content.js popup.js manual-sync.js options.js; do node --check "$file"; done
+node --test tests/*.test.cjs
 ```
 
 Minimum manual validation in a fresh Chrome profile:
@@ -92,8 +92,7 @@ Minimum manual validation in a fresh Chrome profile:
 
 ## Current priorities
 
-1. Add a real product screenshot and short demo recording.
-2. Verify installation in a fresh Chrome profile.
-3. Publish a stable GitHub release ZIP if desired.
-4. Submit the project to the OpenAI Showcase.
-5. Collect feedback before expanding product scope.
+1. Keep the vocabulary-management surface lightweight: browsing first, word actions second, maintenance functions secondary.
+2. Verify the complete extension flow in a fresh Chrome profile before any release decision.
+3. Treat a demo recording, GitHub release ZIP, and Showcase submission as optional, separately authorized publication work.
+4. Collect feedback before expanding product scope.

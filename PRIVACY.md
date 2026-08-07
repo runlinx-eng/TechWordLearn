@@ -83,7 +83,7 @@ The current project does not include a project-operated advertising system. The 
 
 Users can:
 
-- edit, hide, restore, import, and export vocabulary;
+- edit, hide, and restore vocabulary, and import or export vocabulary backups;
 - decide when to inspect, upload, or download a Chrome profile snapshot;
 - clear extension storage through Chrome;
 - disable optional cloud sync;
