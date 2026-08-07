@@ -7,7 +7,7 @@
   const CONTENT_BOOTSTRAP_VERSION = 4;
   if (window.__techwordlearn_loaded__ === CONTENT_BOOTSTRAP_VERSION) return;
   window.__techwordlearn_loaded__ = CONTENT_BOOTSTRAP_VERSION;
-  console.log("[TechWordLearn] content.js active v1.12");
+  console.log("[TechWordLearn] content.js active v1.13");
 
   const EXTENSION_ENABLED_KEY = "extension_enabled";
   let extensionEnabled = false;
@@ -419,6 +419,7 @@
           vocab_backups: backups,
           current_vocab_version_id: null,
           current_vocab_mode: "live",
+          vocab_sync_updated_at: new Date().toISOString(),
         },
         () => {
           customVocab = cleanCustom;
@@ -1075,7 +1076,7 @@
     if (req && req.action === "twl_ping") {
       sendResponse({
         ok: true,
-        version: "1.12",
+        version: "1.13",
         enabled: extensionEnabled,
         vocabSize: Object.keys(vocabulary || {}).length,
       });

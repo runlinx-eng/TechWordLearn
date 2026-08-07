@@ -30,9 +30,8 @@ Technical vocabulary is easiest to remember when it appears inside real document
 - Mark-known workflow to reduce visual noise
 - Vocabulary backups and version snapshots
 - JSON import and export
-- Chrome profile sync for custom and deleted vocabulary
-- Optional user-configured cloud sync
-- Optional local bridge for sharing vocabulary between supported browsers on the same Mac
+- Manual Chrome profile sync for custom and deleted vocabulary
+- Optional user-configured cloud sync, triggered only by its button
 
 ## Demo flow
 
@@ -71,9 +70,10 @@ Click the TechWordLearn icon in the Chrome toolbar to enable or disable the exte
 TechWordLearn is a Manifest V3 browser extension.
 
 - `content.js` scans page text, highlights recognized terms, renders tooltips, and records user interactions.
-- `background.js` manages TTS, context-menu actions, reinjection, browser sync, and optional local or self-hosted synchronization.
+- `background.js` manages TTS, context-menu actions, reinjection, and button-triggered self-hosted synchronization.
 - `popup.html` / `popup.js` show learning statistics and quick actions.
-- `options.html` / `options.js` provide vocabulary, backup, version, import/export, and sync controls.
+- `options.html` / `options.js` provide vocabulary, backup, version, import/export, and explicit manual sync controls.
+- `manual-sync.js` validates, chunks, versions, and hashes Chrome profile sync snapshots.
 - `vocabulary.json` is the baseline technical vocabulary.
 - `vocab_versions/` stores repository-managed vocabulary snapshots.
 
@@ -95,7 +95,9 @@ TechWordLearn does **not** call the OpenAI API at runtime. Its OpenAI connection
 
 ### Chrome profile sync
 
-The extension mirrors custom vocabulary and deleted-word state through `chrome.storage.sync` when that browser capability is available.
+Open **Vocabulary Management** and click **检查同步状态**. TechWordLearn then reads the shared snapshot and offers an explicit upload or download action when needed. It never applies or publishes profile-sync changes in the background.
+
+Snapshots are split below Chrome's per-item quota, protected by SHA-256, and carry a monotonic revision. When both the local and shared copies changed from the last common revision, the extension refuses to guess and asks which side to keep. Chrome itself may transport a snapshot between signed-in profiles after the user saves it; that browser-managed transport is separate from TechWordLearn applying data.
 
 ### Self-hosted cloud sync
 
@@ -104,25 +106,13 @@ Users may explicitly enable synchronization to an endpoint they control:
 1. Deploy `scripts/vocab-cloud-sync-server.py`, or provide a compatible JSON `/sync` endpoint.
 2. Open **Vocabulary Management**.
 3. Enter the endpoint and optional Bearer token.
-4. Enable cloud sync and run a manual sync.
+4. Enable cloud sync and click **立即同步**. No startup, change-listener, or timer triggers it.
 
 See [docs/cloud-vocab-sync.md](docs/cloud-vocab-sync.md).
 
-### Local Mac bridge
+### No local synchronization daemon
 
-To share vocabulary with a supported browser on the same Mac:
-
-```bash
-bash scripts/setup-vocab-sync-bridge.sh start
-```
-
-To stop it:
-
-```bash
-bash scripts/setup-vocab-sync-bridge.sh stop
-```
-
-The bridge listens on `http://127.0.0.1:43110/sync`.
+The extension does not install a polling daemon, open a loopback bridge, or read browser LevelDB files. Browser storage is accessed only through Chrome's supported extension APIs after a manual action.
 
 ## Vocabulary version tools
 
@@ -149,7 +139,8 @@ node scripts/vocab-version.js promote \
 Before publishing a change:
 
 ```bash
-node --check background.js content.js popup.js options.js
+node --check background.js content.js popup.js manual-sync.js options.js
+node --test tests/manual-sync.test.cjs
 ```
 
 Then verify with a fresh Chrome profile:
@@ -160,6 +151,7 @@ Then verify with a fresh Chrome profile:
 - Lookup counts update
 - Custom vocabulary changes take effect
 - Import/export works
+- Chrome profile sync performs no read, write, merge, or apply operation until a manual sync button is clicked
 - Cloud sync remains disabled unless explicitly configured
 - No secrets or local release artifacts are committed
 

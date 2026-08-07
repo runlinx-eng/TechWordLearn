@@ -33,9 +33,8 @@ Current product capabilities include:
 - hidden and restored terms;
 - vocabulary backups and repository snapshots;
 - JSON import/export;
-- Chrome profile sync;
-- optional self-hosted cloud sync;
-- optional same-machine local bridge.
+- manual Chrome profile sync with revision, chunk, and hash validation;
+- optional self-hosted cloud sync, triggered only by the user.
 
 ## Sources of truth
 
@@ -55,6 +54,8 @@ Documentation must not claim a capability that the current code does not impleme
 - Codex may assist development but cannot make the user's final product decisions.
 - Page text is processed locally for matching and highlighting.
 - Cloud synchronization is optional and must use a user-configured endpoint.
+- No synchronization path may poll or directly modify browser LevelDB files.
+- Profile and self-hosted synchronization must begin with an explicit user action.
 - No credentials or tokens may be committed.
 - Generated release artifacts and local runtime state are not source truth.
 - The project does not claim Chrome Web Store publication, hosted service availability, or production support.
@@ -72,7 +73,8 @@ Public documentation should focus on the user problem, visible product behavior,
 Minimum static validation:
 
 ```bash
-node --check background.js content.js popup.js options.js
+node --check background.js content.js popup.js manual-sync.js options.js
+node --test tests/manual-sync.test.cjs
 ```
 
 Minimum manual validation in a fresh Chrome profile:
@@ -84,8 +86,9 @@ Minimum manual validation in a fresh Chrome profile:
 5. Verify popup statistics.
 6. Add and remove a custom term.
 7. Verify import/export.
-8. Confirm optional cloud sync is off unless configured.
-9. Inspect the extension service worker for unexpected errors.
+8. Confirm Chrome profile sync does nothing until a manual button is clicked.
+9. Confirm optional cloud sync is off unless configured and is still button-triggered when configured.
+10. Inspect the extension service worker for unexpected errors or sync alarms.
 
 ## Current priorities
 

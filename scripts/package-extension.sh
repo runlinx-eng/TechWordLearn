@@ -18,11 +18,12 @@ zip -r "$OUT_FILE" \
   popup.js \
   options.html \
   options.css \
+  manual-sync.js \
   options.js \
   vocabulary.json \
   docs \
   scripts \
   vocab_versions \
-  -x "*/.DS_Store" "*/node_modules/*" "*/.git/*" "*/release/*" "*.log" >/dev/null
+  -x "*/.DS_Store" "*/node_modules/*" "*/.git/*" "*/release/*" "*/__pycache__/*" "*.pyc" "*.log" >/dev/null
 
 echo "Packaged: $OUT_FILE"

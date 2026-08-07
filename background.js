@@ -1,15 +1,10 @@
-console.log("[TechWordLearn] background.js active v1.12");
+console.log("[TechWordLearn] background.js active v1.13");
 
 const VOCAB_SYNC_KEYS = ["custom_vocab", "deleted_vocab"];
 const VOCAB_SYNC_STAMP_KEY = "vocab_sync_updated_at";
 const VOCAB_SYNC_ALL_KEYS = [...VOCAB_SYNC_KEYS, VOCAB_SYNC_STAMP_KEY];
 const EXTENSION_ENABLED_KEY = "extension_enabled";
 const INJECT_DIAG_KEY = "__twl_inject_diag";
-const BRIDGE_SYNC_URL = "http://127.0.0.1:43110/sync";
-const BRIDGE_REQUEST_TIMEOUT_MS = 2500;
-const BRIDGE_MIN_INTERVAL_MS = 4000;
-const BRIDGE_ALARM_NAME = "twl_bridge_sync_alarm";
-const BRIDGE_ALARM_PERIOD_MINUTES = 1;
 const CLOUD_SYNC_ENABLED_KEY = "cloud_sync_enabled";
 const CLOUD_SYNC_ENDPOINT_KEY = "cloud_sync_endpoint";
 const CLOUD_SYNC_TOKEN_KEY = "cloud_sync_token";
@@ -27,14 +22,8 @@ const CLOUD_SYNC_CONFIG_KEYS = [
   CLOUD_SYNC_DEVICE_ID_KEY,
 ];
 const CLOUD_REQUEST_TIMEOUT_MS = 6000;
-const CLOUD_MIN_INTERVAL_MS = 4000;
 
-let applyingSyncToLocal = false;
-let applyingLocalToSync = false;
-let bridgeSyncInFlight = false;
-let bridgeLastSyncAt = 0;
 let cloudSyncInFlight = false;
-let cloudLastSyncAt = 0;
 
 function normalizeWord(raw) {
   const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
@@ -126,13 +115,6 @@ function fetchWithTimeout(url, options, timeoutMs) {
   return fetch(url, { ...options, signal: controller.signal })
     .catch(() => null)
     .finally(() => clearTimeout(timer));
-}
-
-function hasTrackedChange(changes) {
-  return (
-    Object.prototype.hasOwnProperty.call(changes, "custom_vocab") ||
-    Object.prototype.hasOwnProperty.call(changes, "deleted_vocab")
-  );
 }
 
 function getStorage(areaName, keys) {
@@ -242,193 +224,14 @@ async function readFailedResponseMessage(response) {
 }
 
 async function writeLocalState(vocabState, stamp) {
-  applyingSyncToLocal = true;
-  try {
-    await setStorage("local", {
-      ...normalizeVocabState(vocabState),
-      [VOCAB_SYNC_STAMP_KEY]: stamp || new Date().toISOString(),
-    });
-  } finally {
-    applyingSyncToLocal = false;
-  }
+  await setStorage("local", {
+    ...normalizeVocabState(vocabState),
+    [VOCAB_SYNC_STAMP_KEY]: stamp || new Date().toISOString(),
+  });
 }
 
-async function writeSyncState(vocabState, stamp) {
-  applyingLocalToSync = true;
-  try {
-    await setStorage("sync", {
-      ...normalizeVocabState(vocabState),
-      [VOCAB_SYNC_STAMP_KEY]: stamp || new Date().toISOString(),
-    });
-  } finally {
-    applyingLocalToSync = false;
-  }
-}
-
-function mergeStatesPreferLocal(syncState, localState) {
-  const s = normalizeVocabState(syncState);
-  const l = normalizeVocabState(localState);
-  const mergedCustom = { ...s.custom_vocab, ...l.custom_vocab };
-  const mergedDeletedSet = new Set([...s.deleted_vocab, ...l.deleted_vocab]);
-  for (const word of Object.keys(mergedCustom)) {
-    mergedDeletedSet.delete(word);
-  }
-  return {
-    custom_vocab: mergedCustom,
-    deleted_vocab: Array.from(mergedDeletedSet),
-  };
-}
-
-async function pushLocalToSync(reason) {
-  if (applyingSyncToLocal) return;
-  const [localRaw, syncRaw] = await Promise.all([
-    getStorage("local", VOCAB_SYNC_ALL_KEYS),
-    getStorage("sync", VOCAB_SYNC_ALL_KEYS),
-  ]);
-
-  if (vocabFingerprint(localRaw) === vocabFingerprint(syncRaw)) return;
-
-  try {
-    await writeSyncState(localRaw, new Date().toISOString());
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    console.warn(`[TechWordLearn] sync push failed (${reason}): ${msg}`);
-  }
-}
-
-async function pullSyncToLocal(reason) {
-  if (applyingLocalToSync) return;
-  const [localRaw, syncRaw] = await Promise.all([
-    getStorage("local", VOCAB_SYNC_ALL_KEYS),
-    getStorage("sync", VOCAB_SYNC_ALL_KEYS),
-  ]);
-
-  if (vocabFingerprint(localRaw) === vocabFingerprint(syncRaw)) return;
-
-  const syncStamp = syncRaw[VOCAB_SYNC_STAMP_KEY];
-  try {
-    await writeLocalState(syncRaw, typeof syncStamp === "string" ? syncStamp : new Date().toISOString());
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    console.warn(`[TechWordLearn] local pull failed (${reason}): ${msg}`);
-  }
-}
-
-async function reconcileVocabState(reason) {
-  const [localRaw, syncRaw] = await Promise.all([
-    getStorage("local", VOCAB_SYNC_ALL_KEYS),
-    getStorage("sync", VOCAB_SYNC_ALL_KEYS),
-  ]);
-
-  const same = vocabFingerprint(localRaw) === vocabFingerprint(syncRaw);
-  const localStampTs = parseStamp(localRaw[VOCAB_SYNC_STAMP_KEY]);
-  const syncStampTs = parseStamp(syncRaw[VOCAB_SYNC_STAMP_KEY]);
-
-  if (same) {
-    if (localStampTs >= syncStampTs) {
-      try {
-        await writeSyncState(localRaw, localRaw[VOCAB_SYNC_STAMP_KEY] || new Date().toISOString());
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        console.warn(`[TechWordLearn] sync stamp align failed (${reason}): ${msg}`);
-      }
-    } else {
-      try {
-        await writeLocalState(syncRaw, syncRaw[VOCAB_SYNC_STAMP_KEY] || new Date().toISOString());
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        console.warn(`[TechWordLearn] local stamp align failed (${reason}): ${msg}`);
-      }
-    }
-    return;
-  }
-
-  if (syncStampTs > localStampTs) {
-    await pullSyncToLocal(`${reason}:sync_newer`);
-    return;
-  }
-  if (localStampTs > syncStampTs) {
-    await pushLocalToSync(`${reason}:local_newer`);
-    return;
-  }
-
-  const merged = mergeStatesPreferLocal(syncRaw, localRaw);
-  const mergedStamp = new Date().toISOString();
-  try {
-    await Promise.all([writeLocalState(merged, mergedStamp), writeSyncState(merged, mergedStamp)]);
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    console.warn(`[TechWordLearn] conflict merge failed (${reason}): ${msg}`);
-  }
-}
-
-async function syncViaLocalBridge(reason, force = false) {
-  const now = Date.now();
-  if (!force) {
-    if (bridgeSyncInFlight) return;
-    if (now - bridgeLastSyncAt < BRIDGE_MIN_INTERVAL_MS) return;
-  }
-
-  bridgeSyncInFlight = true;
-  bridgeLastSyncAt = now;
-  try {
-    const localRaw = await getStorage("local", VOCAB_SYNC_ALL_KEYS);
-    const outgoing = normalizeStampedVocabState(localRaw);
-
-    const response = await fetchWithTimeout(
-      BRIDGE_SYNC_URL,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ...outgoing,
-          reason: String(reason || "unknown"),
-          client: chrome.runtime && chrome.runtime.id ? chrome.runtime.id : "unknown",
-        }),
-      },
-      BRIDGE_REQUEST_TIMEOUT_MS
-    );
-    if (!response || !response.ok) return;
-
-    const incomingRaw = await response.json().catch(() => null);
-    if (!incomingRaw || typeof incomingRaw !== "object") return;
-    const incoming = normalizeStampedVocabState(incomingRaw);
-
-    const outgoingFp = vocabFingerprint(outgoing);
-    const incomingFp = vocabFingerprint(incoming);
-    const outgoingStampTs = parseStamp(outgoing[VOCAB_SYNC_STAMP_KEY]);
-    const incomingStampTs = parseStamp(incoming[VOCAB_SYNC_STAMP_KEY]);
-
-    if (outgoingFp === incomingFp && outgoingStampTs === incomingStampTs) return;
-
-    let target = incoming;
-    if (outgoingStampTs === incomingStampTs && outgoingFp !== incomingFp) {
-      target = {
-        ...mergeStatesPreferIncoming(outgoing, incoming),
-        [VOCAB_SYNC_STAMP_KEY]: new Date().toISOString(),
-      };
-    }
-
-    await Promise.all([
-      writeLocalState(target, target[VOCAB_SYNC_STAMP_KEY]),
-      writeSyncState(target, target[VOCAB_SYNC_STAMP_KEY]),
-    ]);
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    if (!/aborted/i.test(msg)) {
-      console.warn(`[TechWordLearn] local bridge sync failed (${reason}): ${msg}`);
-    }
-  } finally {
-    bridgeSyncInFlight = false;
-  }
-}
-
-async function syncViaCloud(reason, force = false) {
-  const now = Date.now();
-  if (!force) {
-    if (cloudSyncInFlight) return { ok: true, skipped: "busy" };
-    if (now - cloudLastSyncAt < CLOUD_MIN_INTERVAL_MS) return { ok: true, skipped: "throttled" };
-  }
+async function syncViaCloud(reason) {
+  if (cloudSyncInFlight) return { ok: true, skipped: "busy" };
 
   const config = await getCloudSyncConfig();
   if (!config.enabled) {
@@ -448,7 +251,6 @@ async function syncViaCloud(reason, force = false) {
   }
 
   cloudSyncInFlight = true;
-  cloudLastSyncAt = now;
 
   const attemptAt = new Date().toISOString();
   await setCloudSyncStatus({
@@ -516,10 +318,7 @@ async function syncViaCloud(reason, force = false) {
 
     const changed = outgoingFp !== incomingFp || outgoingStampTs !== incomingStampTs;
     if (changed) {
-      await Promise.all([
-        writeLocalState(target, target[VOCAB_SYNC_STAMP_KEY]),
-        writeSyncState(target, target[VOCAB_SYNC_STAMP_KEY]),
-      ]);
+      await writeLocalState(target, target[VOCAB_SYNC_STAMP_KEY]);
     }
 
     await setCloudSyncStatus({
@@ -545,11 +344,6 @@ async function syncViaCloud(reason, force = false) {
   } finally {
     cloudSyncInFlight = false;
   }
-}
-
-function ensureBridgeAlarm() {
-  if (!chrome.alarms || !chrome.alarms.create) return;
-  chrome.alarms.create(BRIDGE_ALARM_NAME, { periodInMinutes: BRIDGE_ALARM_PERIOD_MINUTES });
 }
 
 function applyGlobalEnabledUi(enabled) {
@@ -588,23 +382,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const enabled = changes[EXTENSION_ENABLED_KEY].newValue !== false;
     applyGlobalEnabledUi(enabled);
     if (enabled) void reinjectOpenTabs();
-  }
-
-  if (!hasTrackedChange(changes)) return;
-
-  if (area === "local") {
-    if (applyingSyncToLocal) return;
-    void pushLocalToSync("on_local_changed");
-    void syncViaLocalBridge("on_local_changed");
-    void syncViaCloud("on_local_changed");
-    return;
-  }
-
-  if (area === "sync") {
-    if (applyingLocalToSync) return;
-    void pullSyncToLocal("on_sync_changed");
-    void syncViaLocalBridge("on_sync_changed");
-    void syncViaCloud("on_sync_changed");
   }
 });
 
@@ -720,11 +497,7 @@ async function maybeInjectTab(tabId, url) {
 
 // service worker 被重载/唤醒时也主动补注入，避免旧页面残留失效 content script
 reinjectOpenTabs();
-ensureBridgeAlarm();
 void refreshGlobalEnabledUi();
-void reconcileVocabState("service_worker_boot");
-void syncViaLocalBridge("service_worker_boot", true);
-void syncViaCloud("service_worker_boot", true);
 
 chrome.runtime.onInstalled.addListener(() => {
   if (chrome.contextMenus && chrome.contextMenus.removeAll && chrome.contextMenus.create) {
@@ -736,35 +509,15 @@ chrome.runtime.onInstalled.addListener(() => {
       });
       void refreshGlobalEnabledUi();
       reinjectOpenTabs();
-      ensureBridgeAlarm();
-      void reconcileVocabState("on_installed");
-      void syncViaLocalBridge("on_installed", true);
-      void syncViaCloud("on_installed", true);
     });
     return;
   }
   reinjectOpenTabs();
-  ensureBridgeAlarm();
-  void reconcileVocabState("on_installed");
-  void syncViaLocalBridge("on_installed", true);
-  void syncViaCloud("on_installed", true);
 });
 
 if (chrome.runtime && chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
     reinjectOpenTabs();
-    ensureBridgeAlarm();
-    void reconcileVocabState("on_startup");
-    void syncViaLocalBridge("on_startup", true);
-    void syncViaCloud("on_startup", true);
-  });
-}
-
-if (chrome.alarms && chrome.alarms.onAlarm) {
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (!alarm || alarm.name !== BRIDGE_ALARM_NAME) return;
-    void syncViaLocalBridge("alarm_poll");
-    void syncViaCloud("alarm_poll");
   });
 }
 
@@ -816,7 +569,7 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
   if (!req || typeof req.action !== "string") return;
 
   if (req.action === "sync_cloud_now") {
-    void syncViaCloud("manual_request", true).then(sendResponse);
+    void syncViaCloud("manual_request").then(sendResponse);
     return true;
   }
 

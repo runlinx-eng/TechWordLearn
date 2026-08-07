@@ -37,7 +37,8 @@ GitHub About fields must be changed manually in the repository interface.
 
 ## Validation
 
-- [ ] `node --check background.js content.js popup.js options.js`
+- [ ] `node --check background.js content.js popup.js manual-sync.js options.js`
+- [ ] `node --test tests/*.test.cjs`
 - [ ] Load from a fresh Chrome profile
 - [ ] Open a normal HTTPS technical page
 - [ ] Verify highlight, tooltip, and pronunciation

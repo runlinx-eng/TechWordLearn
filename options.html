@@ -25,11 +25,32 @@
       </label>
     </section>
 
+    <section class="panel manual-sync-panel">
+      <div class="cloud-header">
+        <div>
+          <h2>Chrome 手动同步</h2>
+          <p class="summary">只有点击这里时，TechWordLearn 才会读取或写入共享词库快照。</p>
+        </div>
+        <span class="manual-badge">无后台轮询</span>
+      </div>
+      <div class="actions manual-sync-actions">
+        <button id="check-manual-sync-btn" class="btn primary" type="button">检查同步状态</button>
+        <button id="upload-manual-sync-btn" class="btn secondary" type="button" hidden>
+          使用本机词库上传
+        </button>
+        <button id="download-manual-sync-btn" class="btn secondary" type="button" hidden>
+          使用共享词库下载
+        </button>
+      </div>
+      <p id="manual-sync-summary" class="summary" aria-live="polite">尚未检查</p>
+      <p class="hint">Chrome 可能在账号设备间传输已保存的快照；扩展不会自动应用、合并或覆盖词库。</p>
+    </section>
+
     <section class="panel cloud-panel">
       <div class="cloud-header">
         <div>
-          <h2>云端同步</h2>
-          <p class="summary">把自定义词库同步到你自己的云端接口，跨浏览器和跨设备共用。</p>
+          <h2>自托管云端手动同步</h2>
+          <p class="summary">仅在点击“立即同步”时，把自定义词库同步到你自己的云端接口。</p>
         </div>
         <label class="cloud-toggle">
           <input id="cloud-sync-enabled" type="checkbox" />
@@ -135,6 +156,7 @@
     </section>
   </main>
 
+  <script src="manual-sync.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

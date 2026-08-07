@@ -1,4 +1,8 @@
 const MAX_BACKUPS = 20;
+const manualSync = globalThis.TechWordManualSync;
+if (!manualSync) {
+  throw new Error("TechWordLearn manual sync module failed to load");
+}
 const CLOUD_SYNC_STATUS_LABELS = {
   idle: "未启动",
   syncing: "同步中",
@@ -30,6 +34,8 @@ let cloudSyncLastSyncedAt = "";
 let cloudSyncLastError = "";
 let cloudSyncLastReason = "";
 let cloudSyncLastAttemptAt = "";
+let manualSyncContext = null;
+let manualSyncBusy = false;
 
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("summary");
@@ -39,6 +45,7 @@ const versionSummaryEl = document.getElementById("version-summary");
 const activeVersionDisplayEl = document.getElementById("active-version-display");
 const vocabSectionTitleEl = document.getElementById("vocab-section-title");
 const cloudSyncSummaryEl = document.getElementById("cloud-sync-summary");
+const manualSyncSummaryEl = document.getElementById("manual-sync-summary");
 
 const searchInput = document.getElementById("search-input");
 const tbody = document.getElementById("vocab-tbody");
@@ -61,6 +68,9 @@ const cloudSyncEndpointInput = document.getElementById("cloud-sync-endpoint");
 const cloudSyncTokenInput = document.getElementById("cloud-sync-token");
 const saveCloudSyncBtn = document.getElementById("save-cloud-sync-btn");
 const syncCloudNowBtn = document.getElementById("sync-cloud-now-btn");
+const checkManualSyncBtn = document.getElementById("check-manual-sync-btn");
+const uploadManualSyncBtn = document.getElementById("upload-manual-sync-btn");
+const downloadManualSyncBtn = document.getElementById("download-manual-sync-btn");
 
 function normalizeWord(raw) {
   const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
@@ -221,6 +231,394 @@ function renderCloudSyncPanel() {
     parts.push(`设备ID: ${cloudSyncDeviceId.slice(0, 8)}`);
   }
   cloudSyncSummaryEl.textContent = parts.join(" | ");
+}
+
+function storageGet(areaName, keys) {
+  return new Promise((resolve, reject) => {
+    const area = chrome.storage && chrome.storage[areaName];
+    if (!area || typeof area.get !== "function") {
+      reject(new Error(`storage_${areaName}_unavailable`));
+      return;
+    }
+    area.get(keys, (items) => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        reject(new Error(lastErr.message));
+        return;
+      }
+      resolve(items || {});
+    });
+  });
+}
+
+function storageSet(areaName, payload) {
+  return new Promise((resolve, reject) => {
+    const area = chrome.storage && chrome.storage[areaName];
+    if (!area || typeof area.set !== "function") {
+      reject(new Error(`storage_${areaName}_unavailable`));
+      return;
+    }
+    area.set(payload, () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        reject(new Error(lastErr.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function storageRemove(areaName, keys) {
+  return new Promise((resolve, reject) => {
+    if (!Array.isArray(keys) || keys.length === 0) {
+      resolve();
+      return;
+    }
+    const area = chrome.storage && chrome.storage[areaName];
+    if (!area || typeof area.remove !== "function") {
+      reject(new Error(`storage_${areaName}_unavailable`));
+      return;
+    }
+    area.remove(keys, () => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        reject(new Error(lastErr.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function storageBytesInUse(areaName) {
+  return new Promise((resolve, reject) => {
+    const area = chrome.storage && chrome.storage[areaName];
+    if (!area || typeof area.getBytesInUse !== "function") {
+      resolve(0);
+      return;
+    }
+    area.getBytesInUse(null, (bytes) => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        reject(new Error(lastErr.message));
+        return;
+      }
+      resolve(Number(bytes) || 0);
+    });
+  });
+}
+
+function makeManualDeviceId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `twl_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function ensureManualDeviceId(existingId) {
+  const current = typeof existingId === "string" ? existingId.trim() : "";
+  if (current) return current;
+  const deviceId = makeManualDeviceId();
+  await storageSet("local", { [manualSync.LOCAL_DEVICE_ID_KEY]: deviceId });
+  return deviceId;
+}
+
+async function inspectManualSync() {
+  const localKeys = [
+    "custom_vocab",
+    "deleted_vocab",
+    "vocab_backups",
+    manualSync.LOCAL_BASE_REVISION_KEY,
+    manualSync.LOCAL_BASE_FINGERPRINT_KEY,
+    manualSync.LOCAL_DEVICE_ID_KEY,
+    manualSync.LOCAL_LAST_SYNCED_AT_KEY,
+  ];
+  const [localItems, remoteItems] = await Promise.all([
+    storageGet("local", localKeys),
+    storageGet("sync", null),
+  ]);
+  const localState = manualSync.normalizeState(localItems);
+  const [localFingerprint, remote] = await Promise.all([
+    manualSync.stateFingerprint(localState),
+    manualSync.decodeSnapshot(remoteItems),
+  ]);
+  const baseFingerprint =
+    typeof localItems[manualSync.LOCAL_BASE_FINGERPRINT_KEY] === "string"
+      ? localItems[manualSync.LOCAL_BASE_FINGERPRINT_KEY]
+      : "";
+  const rawBaseRevision = Number(localItems[manualSync.LOCAL_BASE_REVISION_KEY]);
+  const baseRevision = Number.isSafeInteger(rawBaseRevision) && rawBaseRevision >= 0 ? rawBaseRevision : 0;
+  return {
+    localItems,
+    remoteItems,
+    localState,
+    localFingerprint,
+    remote,
+    baseFingerprint,
+    baseRevision,
+    status: manualSync.classifyState(localFingerprint, remote, baseFingerprint),
+  };
+}
+
+function setManualSyncBusy(busy) {
+  manualSyncBusy = Boolean(busy);
+  checkManualSyncBtn.disabled = manualSyncBusy;
+  uploadManualSyncBtn.disabled = manualSyncBusy;
+  downloadManualSyncBtn.disabled = manualSyncBusy;
+}
+
+function hideManualSyncActions() {
+  uploadManualSyncBtn.hidden = true;
+  downloadManualSyncBtn.hidden = true;
+}
+
+function manualSyncCounts(state) {
+  const normalized = manualSync.normalizeState(state);
+  return `自定义 ${Object.keys(normalized.custom_vocab).length}，隐藏 ${normalized.deleted_vocab.length}`;
+}
+
+function renderManualSyncContext(context) {
+  manualSyncContext = context;
+  hideManualSyncActions();
+  uploadManualSyncBtn.textContent = "使用本机词库上传";
+  downloadManualSyncBtn.textContent = "使用共享词库下载";
+
+  const localLabel = `本机：${manualSyncCounts(context.localState)}`;
+  const remoteLabel = context.remote
+    ? `共享：${manualSyncCounts(context.remote.state)}，版本 ${context.remote.revision}`
+    : "共享：尚无快照";
+
+  if (context.status === "in_sync") {
+    if (context.remote && context.remote.kind === "legacy") {
+      manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。内容一致，但共享区仍是旧格式，可点击迁移。`;
+      uploadManualSyncBtn.textContent = "迁移为安全分块快照";
+      uploadManualSyncBtn.hidden = false;
+      return;
+    }
+    manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。两边内容一致。`;
+    return;
+  }
+
+  if (context.status === "remote_missing") {
+    manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。可手动创建第一份共享快照。`;
+    uploadManualSyncBtn.textContent = "创建共享快照";
+    uploadManualSyncBtn.hidden = false;
+    return;
+  }
+
+  if (context.status === "local_ahead") {
+    manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。仅本机有新变化，可手动上传。`;
+    uploadManualSyncBtn.textContent = "上传本机变更";
+    uploadManualSyncBtn.hidden = false;
+    return;
+  }
+
+  if (context.status === "remote_ahead") {
+    manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。仅共享快照有新变化，可手动下载。`;
+    downloadManualSyncBtn.textContent = "下载共享变更";
+    downloadManualSyncBtn.hidden = false;
+    return;
+  }
+
+  manualSyncSummaryEl.textContent =
+    `${localLabel}；${remoteLabel}。两边都可能有变化，不会自动合并；请选择要保留的一边。`;
+  uploadManualSyncBtn.textContent = "用本机覆盖共享";
+  downloadManualSyncBtn.textContent = "用共享覆盖本机";
+  uploadManualSyncBtn.hidden = false;
+  downloadManualSyncBtn.hidden = false;
+}
+
+function manualSyncErrorMessage(err) {
+  const code = err && err.message ? err.message : String(err);
+  const messages = {
+    snapshot_exceeds_safe_sync_capacity: "词库快照超过 Chrome Sync 的安全容量，请先导出 JSON 并精简词库",
+    snapshot_item_exceeds_sync_quota: "词库分块仍超过 Chrome Sync 单项配额",
+    sync_snapshot_hash_mismatch: "共享快照哈希不一致，已拒绝读取",
+    sync_chunk_missing: "共享快照缺少分块，已拒绝读取",
+    sync_snapshot_invalid_json: "共享快照不是有效 JSON，已拒绝读取",
+    sync_snapshot_not_canonical: "共享快照格式异常，已拒绝读取",
+    unsupported_sync_schema: "共享快照版本暂不受支持",
+    sync_changed_during_upload: "上传期间共享快照被另一台设备修改，请重新检查",
+    sync_quota_would_be_exceeded: "写入会超过 Chrome Sync 总容量，未执行上传",
+  };
+  return messages[code] || code;
+}
+
+async function checkManualSyncStatus() {
+  if (manualSyncBusy) return;
+  setManualSyncBusy(true);
+  hideManualSyncActions();
+  manualSyncSummaryEl.textContent = "正在读取并校验共享快照...";
+  try {
+    const context = await inspectManualSync();
+    if (
+      context.status === "in_sync" &&
+      context.remote &&
+      context.remote.kind === "snapshot" &&
+      context.baseFingerprint !== context.remote.fingerprint
+    ) {
+      const deviceId = await ensureManualDeviceId(
+        context.localItems[manualSync.LOCAL_DEVICE_ID_KEY]
+      );
+      await storageSet("local", {
+        [manualSync.LOCAL_BASE_REVISION_KEY]: context.remote.revision,
+        [manualSync.LOCAL_BASE_FINGERPRINT_KEY]: context.remote.fingerprint,
+        [manualSync.LOCAL_DEVICE_ID_KEY]: deviceId,
+        [manualSync.LOCAL_LAST_SYNCED_AT_KEY]: new Date().toISOString(),
+      });
+      context.baseRevision = context.remote.revision;
+      context.baseFingerprint = context.remote.fingerprint;
+    }
+    renderManualSyncContext(context);
+    setStatus("手动同步状态检查完成");
+  } catch (err) {
+    manualSyncContext = null;
+    manualSyncSummaryEl.textContent = `检查失败：${manualSyncErrorMessage(err)}`;
+    setStatus(`手动同步检查失败: ${manualSyncErrorMessage(err)}`, true);
+  } finally {
+    setManualSyncBusy(false);
+  }
+}
+
+function uploadAllowed(context) {
+  if (!context) return false;
+  if (context.status === "in_sync") return Boolean(context.remote && context.remote.kind === "legacy");
+  return ["remote_missing", "local_ahead", "conflict", "conflict_unlinked"].includes(context.status);
+}
+
+async function uploadManualSnapshot() {
+  if (manualSyncBusy) return;
+  setManualSyncBusy(true);
+  try {
+    const context = await inspectManualSync();
+    renderManualSyncContext(context);
+    if (!uploadAllowed(context)) {
+      setStatus("同步状态已变化，请按当前提示选择操作", true);
+      return;
+    }
+    const warning = context.remote
+      ? `将以本机词库（${manualSyncCounts(context.localState)}）覆盖共享快照。继续？`
+      : `将以本机词库（${manualSyncCounts(context.localState)}）创建共享快照。继续？`;
+    if (!window.confirm(warning)) return;
+
+    const deviceId = await ensureManualDeviceId(
+      context.localItems[manualSync.LOCAL_DEVICE_ID_KEY]
+    );
+    const nextRevision = Math.max(context.baseRevision, context.remote ? context.remote.revision : 0) + 1;
+    const snapshot = await manualSync.buildSnapshot(context.localState, {
+      revision: nextRevision,
+      deviceId,
+    });
+    const currentBytes = await storageBytesInUse("sync");
+    const projectedBytes = currentBytes + manualSync.itemsStorageBytes(snapshot.chunkItems);
+    const syncQuota = Number(chrome.storage.sync.QUOTA_BYTES) || 102400;
+    if (projectedBytes > Math.floor(syncQuota * 0.96)) {
+      throw new Error("sync_quota_would_be_exceeded");
+    }
+
+    await storageSet("sync", snapshot.chunkItems);
+    await storageSet("sync", { [manualSync.META_KEY]: snapshot.meta });
+
+    const verifyItems = await storageGet("sync", null);
+    const verified = await manualSync.decodeSnapshot(verifyItems);
+    if (
+      !verified ||
+      verified.kind !== "snapshot" ||
+      verified.generation !== snapshot.generation ||
+      verified.fingerprint !== snapshot.fingerprint
+    ) {
+      throw new Error("sync_changed_during_upload");
+    }
+
+    const staleKeys = manualSync.staleManagedKeys(verifyItems, snapshot.generation);
+    let cleanupWarning = "";
+    try {
+      await storageRemove("sync", staleKeys);
+    } catch (err) {
+      cleanupWarning = `；旧分块清理失败：${manualSyncErrorMessage(err)}`;
+    }
+    const syncedAt = new Date().toISOString();
+    await storageSet("local", {
+      [manualSync.LOCAL_BASE_REVISION_KEY]: snapshot.meta.revision,
+      [manualSync.LOCAL_BASE_FINGERPRINT_KEY]: snapshot.fingerprint,
+      [manualSync.LOCAL_DEVICE_ID_KEY]: deviceId,
+      [manualSync.LOCAL_LAST_SYNCED_AT_KEY]: syncedAt,
+    });
+
+    const updated = await inspectManualSync();
+    renderManualSyncContext(updated);
+    setStatus(`手动上传完成，版本 ${snapshot.meta.revision}${cleanupWarning}`, Boolean(cleanupWarning));
+  } catch (err) {
+    setStatus(`手动上传失败: ${manualSyncErrorMessage(err)}`, true);
+    manualSyncSummaryEl.textContent = `上传失败：${manualSyncErrorMessage(err)}`;
+  } finally {
+    setManualSyncBusy(false);
+  }
+}
+
+async function downloadManualSnapshot() {
+  if (manualSyncBusy) return;
+  setManualSyncBusy(true);
+  try {
+    const context = await inspectManualSync();
+    renderManualSyncContext(context);
+    if (!context.remote || context.status === "in_sync") {
+      setStatus("共享词库没有需要下载的变化", true);
+      return;
+    }
+    if (
+      !window.confirm(
+        `将使用共享词库（${manualSyncCounts(context.remote.state)}）覆盖本机；当前本机词库会先保存为可恢复版本。继续？`
+      )
+    ) {
+      return;
+    }
+
+    const deviceId = await ensureManualDeviceId(
+      context.localItems[manualSync.LOCAL_DEVICE_ID_KEY]
+    );
+    const downloadedAt = new Date().toISOString();
+    const beforeDownload = {
+      id: makeId(),
+      at: downloadedAt,
+      label: `before_manual_sync_download:r${context.remote.revision}`,
+      custom_vocab: context.localState.custom_vocab,
+      deleted_vocab: context.localState.deleted_vocab,
+    };
+    const storedBackups = Array.isArray(context.localItems.vocab_backups)
+      ? context.localItems.vocab_backups
+      : backups;
+    const nextBackups = [beforeDownload, ...storedBackups].slice(0, MAX_BACKUPS);
+    await storageSet("local", {
+      custom_vocab: context.remote.state.custom_vocab,
+      deleted_vocab: context.remote.state.deleted_vocab,
+      vocab_backups: nextBackups,
+      current_vocab_version_id: null,
+      current_vocab_mode: "live",
+      vocab_sync_updated_at: context.remote.updatedAt || downloadedAt,
+      [manualSync.LOCAL_BASE_REVISION_KEY]: context.remote.revision,
+      [manualSync.LOCAL_BASE_FINGERPRINT_KEY]: context.remote.fingerprint,
+      [manualSync.LOCAL_DEVICE_ID_KEY]: deviceId,
+      [manualSync.LOCAL_LAST_SYNCED_AT_KEY]: downloadedAt,
+    });
+
+    customVocab = context.remote.state.custom_vocab;
+    deletedSet = new Set(context.remote.state.deleted_vocab);
+    backups = nextBackups;
+    currentVersionId = null;
+    currentVersionMode = "live";
+    pageViewMode = "live";
+    renderAll();
+    const updated = await inspectManualSync();
+    renderManualSyncContext(updated);
+    setStatus(`手动下载完成，共享版本 ${context.remote.revision}`);
+  } catch (err) {
+    setStatus(`手动下载失败: ${manualSyncErrorMessage(err)}`, true);
+    manualSyncSummaryEl.textContent = `下载失败：${manualSyncErrorMessage(err)}`;
+  } finally {
+    setManualSyncBusy(false);
+  }
 }
 
 function buildEffectiveVocab(custom, deletedWordSet) {
@@ -774,6 +1172,7 @@ function saveState(nextCustom, nextDeleted, label) {
       vocab_backups: nextBackups,
       current_vocab_version_id: null,
       current_vocab_mode: "live",
+      vocab_sync_updated_at: new Date().toISOString(),
     },
     () => {
       const lastErr = chrome.runtime.lastError;
@@ -889,6 +1288,7 @@ function setCurrentVersion() {
       vocab_backups: nextBackups,
       current_vocab_version_id: snapshot.id,
       current_vocab_mode: "version",
+      vocab_sync_updated_at: new Date().toISOString(),
     },
     () => {
       const lastErr = chrome.runtime.lastError;
@@ -1163,6 +1563,9 @@ function bindEvents() {
   viewLiveBtn.addEventListener("click", switchToLiveView);
   saveCloudSyncBtn.addEventListener("click", saveCloudSyncSettings);
   syncCloudNowBtn.addEventListener("click", syncCloudNow);
+  checkManualSyncBtn.addEventListener("click", checkManualSyncStatus);
+  uploadManualSyncBtn.addEventListener("click", uploadManualSnapshot);
+  downloadManualSyncBtn.addEventListener("click", downloadManualSnapshot);
   cloudSyncEnabledInput.addEventListener("change", updateCloudSyncActionState);
   cloudSyncEndpointInput.addEventListener("input", updateCloudSyncActionState);
 
@@ -1175,6 +1578,12 @@ function bindEvents() {
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
+
+    if (changes.custom_vocab || changes.deleted_vocab) {
+      manualSyncContext = null;
+      hideManualSyncActions();
+      manualSyncSummaryEl.textContent = "本机词库已变化，请点击“检查同步状态”。";
+    }
 
     const hasCountChange = Object.entries(changes).some(([key, diff]) => {
       const normalized = normalizeWord(key);

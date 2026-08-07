@@ -26,7 +26,7 @@ Depending on use, Chrome extension storage may contain:
 - lookup counts and weekly lookup counts;
 - vocabulary backups;
 - selected vocabulary version state;
-- synchronization timestamps and status;
+- manual synchronization revisions, hashes, timestamps, and status;
 - optional self-hosted sync configuration;
 - a locally generated device identifier for optional cloud sync;
 - diagnostic information related to script reinjection.
@@ -35,25 +35,19 @@ Removing the extension or clearing its storage may remove this data.
 
 ## Chrome profile sync
 
-The extension uses `chrome.storage.sync` for custom vocabulary, deleted vocabulary, and a synchronization timestamp when that browser capability is available.
+The extension uses `chrome.storage.sync` only after the user clicks a manual sync control. A shared snapshot contains custom vocabulary, deleted vocabulary, a monotonic revision, a content hash, and technical chunk metadata.
 
-Chrome controls whether and how this data is synchronized with the user's signed-in browser profile. Users should review their Chrome sync settings if they do not want browser-managed synchronization.
+TechWordLearn does not watch `chrome.storage.sync` for automatic imports and does not publish local vocabulary changes automatically. Chrome controls whether and how a snapshot already saved by the user is transported with the signed-in browser profile. Users should review Chrome sync settings if they do not want that browser-managed transport.
 
-## Local bridge
+Conflicts are not silently merged: when both copies changed from the last common revision, the management page asks the user which copy to retain.
 
-The background worker may periodically attempt to contact:
+## No local bridge or database access
 
-```text
-http://127.0.0.1:43110/sync
-```
-
-This is a loopback address on the user's own computer. It supports the optional local vocabulary bridge. If the bridge is not running, the request fails locally.
-
-The local bridge exchanges custom vocabulary, deleted vocabulary, and update timestamps. It does not need full webpage content.
+The current extension does not run a local synchronization server, poll browser storage files, or directly read or write Chrome LevelDB data.
 
 ## Optional self-hosted cloud sync
 
-Cloud sync is disabled unless the user enables it and provides an endpoint.
+Cloud sync is disabled unless the user enables it and provides an endpoint. Even when configured, it runs only after the user clicks **立即同步**.
 
 When enabled, the extension may send the following to the user-configured endpoint:
 
@@ -76,7 +70,6 @@ The current extension requests:
 - `tts`: pronounce technical vocabulary through Chrome's text-to-speech service;
 - `scripting`: inject extension scripts and styles when necessary;
 - `tabs`: identify and reinject supported open pages after extension changes or service-worker restarts;
-- `alarms`: run periodic local and optional synchronization checks;
 - `<all_urls>` host access: highlight terms on webpages selected by the user;
 - all-frame access: support pages whose readable content appears inside frames.
 
@@ -91,10 +84,10 @@ The current project does not include a project-operated advertising system. The 
 Users can:
 
 - edit, hide, restore, import, and export vocabulary;
+- decide when to inspect, upload, or download a Chrome profile snapshot;
 - clear extension storage through Chrome;
 - disable optional cloud sync;
 - remove a configured endpoint and token;
-- stop the local bridge;
 - disable or uninstall the extension.
 
 ## Security notes
