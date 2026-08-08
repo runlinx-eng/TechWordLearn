@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          for file in background.js content.js popup.js manual-sync.js options.js; do
+            node --check "$file"
+          done
+
+      - name: Run tests
+        run: node --test tests/*.test.cjs
+
+      - name: Validate manifest
+        run: python3 -m json.tool manifest.json >/dev/null
