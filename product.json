@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "name": "TechWordLearn",
+  "canonical_document": "PRODUCT.md",
+  "product_type": "dynamic_personal_vocabulary",
+  "definition": {
+    "zh-CN": "真实阅读驱动的动态个人生词表。",
+    "en": "A dynamic personal vocabulary list driven by real reading behavior."
+  },
+  "core_value": {
+    "zh-CN": "把有限注意力持续给当前最值得记的词。",
+    "en": "Continuously allocate limited attention to the words currently most worth learning."
+  },
+  "core_loop": [
+    "add_unknown_word",
+    "highlight_during_real_reading",
+    "point_read_when_needed",
+    "accumulate_point_read_count",
+    "raise_attention_priority",
+    "master_word",
+    "leave_attention_queue",
+    "surface_next_priority_words"
+  ],
+  "primary_signal": {
+    "name": "point_read_frequency",
+    "event": "click_highlighted_word_for_pronunciation",
+    "meaning": "Repeated explicit need during real reading.",
+    "not_equivalent_to": "passive_page_appearance_count"
+  },
+  "ranking": {
+    "role": "learning_attention_priority",
+    "stored": false,
+    "popup_order": "current_week_point_read_count_then_cumulative_fallback",
+    "tie_breaker": "alphabetical"
+  },
+  "state_meaning": {
+    "active": "In the effective vocabulary, not hidden or mastered, and still in the current attention pool.",
+    "point_read_count": "Explicit clicks for pronunciation during real reading.",
+    "rank": "Derived attention priority rather than a manually stored order.",
+    "mastered": "Leaves highlighting and the current attention queue while retaining point-read history.",
+    "hidden": "Removed from the effective vocabulary; not equivalent to learned."
+  },
+  "core_feedback_loop": [
+    "ranking",
+    "mastered_exit",
+    "next_word_refill"
+  ],
+  "supporting_capabilities": [
+    "webpage_highlighting",
+    "contextual_definition",
+    "pronunciation",
+    "word_addition_and_editing"
+  ],
+  "non_core_infrastructure": [
+    "multi_device_sync",
+    "backup_import_export",
+    "version_history_restore",
+    "maintenance_views",
+    "detailed_statistics",
+    "self_hosted_transport"
+  ],
+  "not_the_product": [
+    "static_word_list",
+    "traditional_memorization_course",
+    "webpage_translation_only",
+    "statistics_dashboard",
+    "technical_english_domain"
+  ],
+  "domain": "general_english_web_reading",
+  "default_vocabulary_bias": "technical",
+  "product_invariant": "The most repeatedly point-read active words remain easiest to notice; mastered words leave the current attention queue without losing point-read history."
+}

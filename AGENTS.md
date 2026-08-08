@@ -2,7 +2,9 @@
 
 ## Position
 
-TechWordLearn is a Manifest V3 Chrome extension that turns real webpage reading into a dynamic personal vocabulary list. Words the user repeatedly point-reads rise to the top, keeping limited attention on what is most worth learning now. `PROJECT.md` owns the stable project boundary; `README.md` owns user-facing setup and operation.
+TechWordLearn is a Manifest V3 Chrome extension that turns real webpage reading into a dynamic personal vocabulary list. Words the user repeatedly point-reads rise to the top, keeping limited attention on what is most worth learning now.
+
+Product semantics are canonical in `PRODUCT.md`; `product.json` is its machine-readable projection. Do not infer product priority only from feature count or code size. `PROJECT.md` owns project scope and status; `README.md` owns user-facing setup and operation.
 
 ## Run and validate
 

@@ -6,15 +6,9 @@ TechWordLearn is a public, open-source, real-reading-driven dynamic vocabulary l
 
 Its core value is to keep the user's limited attention on the words most worth remembering now. Words repeatedly point-read during normal webpage reading rise to the top; when one is mastered, the next group naturally takes its place.
 
-Canonical product language:
-
-> 产品定义：真实阅读驱动的动态生词表。
->
-> 核心价值：把有限注意力持续给当前最值得记的词。
->
-> 主口号：最实用的生词，会自己冒出来等我消灭。
->
-> 机制口号：记住一个，下一批自然顶上来。
+The canonical product causal model and priority are defined in `PRODUCT.md`;
+`product.json` is its machine-readable projection. This file owns project scope,
+status, and boundaries rather than a second product definition.
 
 ## Current status
 
@@ -33,14 +27,24 @@ This status does not claim production readiness or Chrome Web Store approval. Th
 
 ## Product scope
 
-Current product capabilities include:
+The core learning loop is:
+
+- add an unknown word and keep it highlighted during real reading;
+- turn repeated point-reading into attention priority;
+- remove a mastered word from current attention;
+- let the next priority words move up.
+
+Supporting product capabilities include:
 
 - webpage word highlighting;
 - hover definitions;
 - pronunciation;
-- total and weekly point-reading statistics;
 - custom vocabulary management;
 - hidden and restored terms;
+
+Maintenance infrastructure includes:
+
+- total and weekly point-reading statistics;
 - mastered-word state retained by backups, version restore, and manual synchronization;
 - vocabulary backups and repository snapshots;
 - backup import/export, using JSON as the on-disk format;
@@ -49,6 +53,8 @@ Current product capabilities include:
 
 ## Sources of truth
 
+- Product meaning, causal model, and priority: `PRODUCT.md`
+- Machine-readable product projection: `product.json`
 - Extension contract and permissions: `manifest.json`
 - Runtime behavior: JavaScript, HTML, and CSS in the repository
 - Baseline vocabulary: `vocabulary.json`
