@@ -85,17 +85,31 @@ def sanitize_state(raw: Any, fallback_stamp: str | None = None) -> dict[str, Any
         for word in sanitize_word_list(raw.get("deleted_vocab") if isinstance(raw, dict) else None)
         if word not in custom
     ]
+    mastered = sanitize_word_list(raw.get("mastered_list") if isinstance(raw, dict) else None)
     stamp = raw.get(STAMP_KEY) if isinstance(raw, dict) else None
     if parse_stamp(stamp) <= 0:
         stamp = fallback_stamp or now_iso()
-    return {"custom_vocab": custom, "deleted_vocab": deleted, STAMP_KEY: stamp}
+    return {
+        "custom_vocab": custom,
+        "deleted_vocab": deleted,
+        "mastered_list": mastered,
+        STAMP_KEY: stamp,
+    }
 
 
 def state_fingerprint(state: dict[str, Any]) -> str:
     normalized = sanitize_state(state)
     custom_sorted = {k: normalized["custom_vocab"][k] for k in sorted(normalized["custom_vocab"])}
     deleted_sorted = sorted(normalized["deleted_vocab"])
-    return json.dumps({"custom_vocab": custom_sorted, "deleted_vocab": deleted_sorted}, ensure_ascii=False)
+    mastered_sorted = sorted(normalized["mastered_list"])
+    return json.dumps(
+        {
+            "custom_vocab": custom_sorted,
+            "deleted_vocab": deleted_sorted,
+            "mastered_list": mastered_sorted,
+        },
+        ensure_ascii=False,
+    )
 
 
 def merge_equal_stamp(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -107,7 +121,13 @@ def merge_equal_stamp(current: dict[str, Any], incoming: dict[str, Any]) -> dict
             continue
         seen.add(word)
         deleted.append(word)
-    return {"custom_vocab": custom, "deleted_vocab": deleted, STAMP_KEY: now_iso()}
+    mastered = list(dict.fromkeys(current["mastered_list"] + incoming["mastered_list"]))
+    return {
+        "custom_vocab": custom,
+        "deleted_vocab": deleted,
+        "mastered_list": mastered,
+        STAMP_KEY: now_iso(),
+    }
 
 
 def choose_canonical(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:

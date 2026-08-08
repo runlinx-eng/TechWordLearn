@@ -93,7 +93,7 @@ function fakeStorageArea(store, counters) {
   };
 }
 
-function makeHarness({ baseFixture = {}, localFixture = {} } = {}) {
+function makeHarness({ baseFixture = {}, localFixture = {}, syncFixture = {} } = {}) {
   const elements = new Map();
   const getElement = (id) => {
     if (!elements.has(id)) elements.set(id, new FakeElement(id));
@@ -102,10 +102,11 @@ function makeHarness({ baseFixture = {}, localFixture = {} } = {}) {
   const localStore = {
     custom_vocab: { kernel: "内核", latency: "延迟" },
     deleted_vocab: [],
+    mastered_list: ["evidence"],
     vocab_backups: [],
     ...localFixture,
   };
-  const syncStore = {};
+  const syncStore = { ...syncFixture };
   const localCounters = { get: 0, set: 0, remove: 0 };
   const syncCounters = { get: 0, set: 0, remove: 0 };
   const runtimeCounters = { sendMessage: 0 };
@@ -168,6 +169,29 @@ function makeHarness({ baseFixture = {}, localFixture = {} } = {}) {
   };
 }
 
+async function schemaTwoFixture(state, revision = 4) {
+  const payload = JSON.stringify(state);
+  const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  const fingerprint = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  const generation = "schema-two-options";
+  return {
+    [`twl_vocab_sync_chunk_${generation}_000`]: payload,
+    twl_vocab_sync_meta: {
+      schema_version: 2,
+      revision,
+      generation,
+      chunk_count: 1,
+      content_sha256: fingerprint,
+      updated_at: "2026-08-07T00:00:00.000Z",
+      updated_by: "old-device",
+      custom_count: Object.keys(state.custom_vocab).length,
+      deleted_count: state.deleted_vocab.length,
+    },
+  };
+}
+
 test("profile sync remains untouched until the user invokes manual controls", async () => {
   const harness = makeHarness();
   await new Promise((resolve) => setImmediate(resolve));
@@ -179,6 +203,11 @@ test("profile sync remains untouched until the user invokes manual controls", as
 
   harness.context.saveState({ kernel: "内核（已编辑）", latency: "延迟" }, new Set(), "fixture_edit");
   assert.match(harness.localStore.vocab_sync_updated_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.localStore.mastered_list)), ["evidence"]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.localStore.vocab_backups[0].mastered_list)),
+    ["evidence"]
+  );
   assert.equal(harness.syncCounters.get, 0);
   assert.equal(harness.syncCounters.set, 0);
 
@@ -191,10 +220,159 @@ test("profile sync remains untouched until the user invokes manual controls", as
   await harness.context.uploadManualSnapshot();
   assert.ok(harness.syncCounters.set >= 2);
   assert.equal(harness.syncStore.twl_vocab_sync_meta.revision, 1);
+  assert.equal(harness.syncStore.twl_vocab_sync_meta.schema_version, 3);
+  assert.equal(harness.syncStore.twl_vocab_sync_meta.mastered_count, 1);
   assert.match(harness.syncStore.twl_vocab_sync_meta.content_sha256, /^[a-f0-9]{64}$/);
   assert.equal(harness.localStore.twl_manual_sync_base_revision, 1);
   assert.equal(harness.runtimeCounters.sendMessage, 0);
   assert.match(harness.elements.get("status").textContent, /手动上传完成/);
+
+  const uploaded = await harness.context.TechWordManualSync.decodeSnapshot(harness.syncStore);
+  assert.deepEqual(Array.from(uploaded.state.mastered_list), ["evidence"]);
+});
+
+test("backup parsing, version snapshots, and restores carry mastered state", async () => {
+  const historicalId = "history-mastered";
+  const legacyId = "history-without-mastered";
+  const harness = makeHarness({
+    localFixture: {
+      mastered_list: ["evidence"],
+      vocab_backups: [
+        {
+          id: historicalId,
+          at: "2026-08-01T00:00:00.000Z",
+          label: "manual",
+          custom_vocab: { kernel: "内核" },
+          deleted_vocab: ["scope"],
+          mastered_list: ["routing"],
+        },
+        {
+          id: legacyId,
+          at: "2026-07-01T00:00:00.000Z",
+          label: "manual",
+          custom_vocab: { kernel: "旧内核" },
+          deleted_vocab: [],
+        },
+      ],
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        harness.context.parseImportPayload({
+          custom_vocab: {},
+          deleted_vocab: [],
+          mastered_list: ["Domain", "domain"],
+        })
+      )
+    ),
+    { custom: {}, deleted: [], mastered: ["domain"] }
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.context.parseImportPayload({ custom_vocab: {} }))),
+    { custom: {}, deleted: [], mastered: [] }
+  );
+
+  harness.context.saveState(
+    { kernel: "内核（已编辑）" },
+    new Set(),
+    "fixture_mastered",
+    new Set(["domain"])
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.localStore.mastered_list)), ["domain"]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.localStore.vocab_backups[0].mastered_list)),
+    ["evidence"]
+  );
+
+  vm.runInContext(`selectedVersionId = ${JSON.stringify(historicalId)}`, harness.context);
+  harness.context.setCurrentVersion();
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.localStore.mastered_list)), ["routing"]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.localStore.vocab_backups[0].mastered_list)),
+    ["domain"]
+  );
+
+  vm.runInContext(`selectedVersionId = ${JSON.stringify(legacyId)}`, harness.context);
+  harness.context.setCurrentVersion();
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.localStore.mastered_list)), []);
+});
+
+test("schema 2 base hashes migrate without hiding a real two-sided conflict", async () => {
+  const oldLocalState = {
+    custom_vocab: { kernel: "内核" },
+    deleted_vocab: [],
+  };
+  const oldLocalPayload = JSON.stringify(oldLocalState);
+  const oldLocalDigest = await webcrypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(oldLocalPayload)
+  );
+  const oldBaseFingerprint = Array.from(new Uint8Array(oldLocalDigest), (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  const remoteState = {
+    custom_vocab: { kernel: "内核", latency: "延迟" },
+    deleted_vocab: [],
+  };
+  const harness = makeHarness({
+    localFixture: {
+      ...oldLocalState,
+      mastered_list: ["evidence"],
+      twl_manual_sync_base_fingerprint: oldBaseFingerprint,
+      twl_manual_sync_base_revision: 3,
+    },
+    syncFixture: await schemaTwoFixture(remoteState, 4),
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await harness.context.checkManualSyncStatus();
+  assert.match(harness.elements.get("manual-sync-summary").textContent, /两边都可能有变化/);
+  assert.equal(harness.elements.get("upload-manual-sync-btn").hidden, false);
+  assert.equal(harness.elements.get("download-manual-sync-btn").hidden, false);
+});
+
+test("manual Chrome download restores remote mastered state and backs up the local state", async () => {
+  const harness = makeHarness({
+    localFixture: {
+      custom_vocab: { kernel: "内核" },
+      deleted_vocab: [],
+      mastered_list: ["evidence"],
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const localState = harness.context.TechWordManualSync.normalizeState(harness.localStore);
+  harness.localStore.twl_manual_sync_base_fingerprint =
+    await harness.context.TechWordManualSync.stateFingerprint(localState);
+  harness.localStore.twl_manual_sync_base_revision = 1;
+  const remote = await harness.context.TechWordManualSync.buildSnapshot(
+    {
+      custom_vocab: { kernel: "内核", latency: "延迟" },
+      deleted_vocab: ["scope"],
+      mastered_list: ["routing"],
+    },
+    {
+      revision: 2,
+      deviceId: "remote-device",
+      generation: "manual-download-fixture",
+      updatedAt: "2026-08-08T00:00:00.000Z",
+    }
+  );
+  Object.assign(harness.syncStore, remote.allItems);
+
+  await harness.context.downloadManualSnapshot();
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.localStore.mastered_list)), ["routing"]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.localStore.vocab_backups[0].mastered_list)),
+    ["evidence"]
+  );
+  assert.equal(harness.localStore.twl_manual_sync_base_revision, 2);
 });
 
 test("dense list filters and detail drawer are read-only until an explicit action", async () => {

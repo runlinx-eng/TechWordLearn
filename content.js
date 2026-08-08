@@ -7,7 +7,7 @@
   const CONTENT_BOOTSTRAP_VERSION = 4;
   if (window.__techwordlearn_loaded__ === CONTENT_BOOTSTRAP_VERSION) return;
   window.__techwordlearn_loaded__ = CONTENT_BOOTSTRAP_VERSION;
-  console.log("[TechWordLearn] content.js active v1.13");
+  console.log("[TechWordLearn] content.js active v1.14");
 
   const EXTENSION_ENABLED_KEY = "extension_enabled";
   let extensionEnabled = false;
@@ -264,18 +264,6 @@
     return out;
   }
 
-  function sanitizeWordCountMap(raw) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const out = {};
-    for (const [key, value] of Object.entries(raw)) {
-      const normalized = normalizeWord(key);
-      if (!normalized || normalized !== key) continue;
-      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
-      out[key] = Math.floor(value);
-    }
-    return out;
-  }
-
   function collectScanRoots() {
     const roots = [];
     const seen = new Set();
@@ -323,6 +311,21 @@
     return false;
   }
 
+  function isExtensionOwnedMutationNode(node) {
+    if (!node) return false;
+    const element =
+      node.nodeType === Node.ELEMENT_NODE
+        ? node
+        : node.parentElement || (node.parentNode && node.parentNode.host) || null;
+    if (!element) return false;
+    if (element.id === "neural-tooltip-container") return true;
+    if (element.classList && element.classList.contains("tech-word-highlight")) return true;
+    return Boolean(
+      element.closest &&
+        element.closest("#neural-tooltip-container, .tech-word-highlight")
+    );
+  }
+
   function ensureRootObservers() {
     if (!extensionEnabled || !rootMutationHandler) return;
     const roots = collectScanRoots();
@@ -348,35 +351,6 @@
     observerBootstrapTimers = [];
   }
 
-  function getCurrentWeekKey() {
-    const now = new Date();
-    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-    return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-  }
-
-  function sanitizeWeeklyWordCounts(raw) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const out = {};
-    for (const [weekKey, value] of Object.entries(raw)) {
-      if (!/^\d{4}-W\d{2}$/.test(weekKey)) continue;
-      out[weekKey] = sanitizeWordCountMap(value);
-    }
-    return out;
-  }
-
-  function pruneWeeklyWordCounts(weeklyMap, keep) {
-    const keys = Object.keys(weeklyMap).sort((a, b) => b.localeCompare(a));
-    const next = {};
-    for (let i = 0; i < keys.length && i < keep; i++) {
-      next[keys[i]] = weeklyMap[keys[i]];
-    }
-    return next;
-  }
-
   function makeSnapshotId() {
     return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -390,9 +364,10 @@
   }
 
   function saveVocabularyState(nextCustom, nextDeleted, reason, callback) {
-    safeStorageGet(["custom_vocab", "deleted_vocab", "vocab_backups"], (res) => {
+    safeStorageGet(["custom_vocab", "deleted_vocab", "mastered_list", "vocab_backups"], (res) => {
       const currentCustom = sanitizeWordMap(res.custom_vocab);
       const currentDeleted = sanitizeWordList(res.deleted_vocab);
+      const currentMastered = sanitizeWordList(res.mastered_list);
       const currentBackups = Array.isArray(res.vocab_backups) ? res.vocab_backups : [];
 
       const snapshot = {
@@ -401,6 +376,7 @@
         label: reason || "manual",
         custom_vocab: currentCustom,
         deleted_vocab: currentDeleted,
+        mastered_list: currentMastered,
       };
 
       const cleanCustom = sanitizeWordMap(nextCustom);
@@ -495,6 +471,27 @@
     const frag = document.createDocumentFragment();
     while (span.firstChild) frag.appendChild(span.firstChild);
     parent.replaceChild(frag, span);
+  }
+
+  function removeInactiveHighlights(onlyWords) {
+    const parents = new Set();
+    for (const root of collectScanRoots()) {
+      if (!root.querySelectorAll) continue;
+      for (const span of root.querySelectorAll(".tech-word-highlight")) {
+        const key = normalizeWord(span.dataset && span.dataset.key);
+        const targeted = !onlyWords || (key && onlyWords.has(key));
+        const inactive = !key || !vocabulary[key] || masteredWords.has(key);
+        if (!targeted || (!onlyWords && !inactive)) continue;
+        if (span.parentNode) parents.add(span.parentNode);
+        unwrapSpanKeepChildren(span);
+      }
+    }
+
+    for (const parent of parents) {
+      if (parent && parent.isConnected && typeof parent.normalize === "function") {
+        parent.normalize();
+      }
+    }
   }
 
   function hideTooltip() {
@@ -600,7 +597,7 @@
       const count = res[key] || 0;
       const tip = ensureTooltipEl();
       if (!tip) return;
-      tip.innerText = `${def}\n[Seen: ${count}]`;
+      tip.innerText = `${def}\n点读过 ${count} 次`;
 
       const r = span.getBoundingClientRect();
       tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 260))}px`;
@@ -649,16 +646,12 @@
   document.addEventListener("click", onClick, true);
 
   function updateWordCount(word) {
-    safeStorageGet([word, "weekly_word_counts"], (result) => {
-      const newCount = (result[word] || 0) + 1;
-      const weekly = sanitizeWeeklyWordCounts(result.weekly_word_counts);
-      const weekKey = getCurrentWeekKey();
-      const oneWeek = sanitizeWordCountMap(weekly[weekKey]);
-      oneWeek[word] = (oneWeek[word] || 0) + 1;
-      weekly[weekKey] = oneWeek;
-      const prunedWeekly = pruneWeeklyWordCounts(weekly, 12);
-
-      safeStorageSet({ [word]: newCount, weekly_word_counts: prunedWeekly });
+    safeRuntimeSendMessage({ action: "increment_word_count", word }, (response) => {
+      if (!response || !response.ok) {
+        console.warn(
+          `[TechWordLearn] Count update failed: ${(response && response.error) || "runtime_failed"}`
+        );
+      }
     });
   }
 
@@ -756,13 +749,15 @@
     if (!confirm(`标记为已掌握：${word}?`)) return;
 
     masteredWords.add(word);
-    safeStorageSet({ mastered_list: Array.from(masteredWords) });
+    safeStorageSet({
+      mastered_list: Array.from(masteredWords),
+      current_vocab_version_id: null,
+      current_vocab_mode: "live",
+      vocab_sync_updated_at: new Date().toISOString(),
+    });
 
-    // 重要：保留原格式（斜体/代码），不要直接替换成纯文本
-    const spans = document.querySelectorAll(
-      `.tech-word-highlight[data-key="${CSS.escape(word)}"]`
-    );
-    spans.forEach(unwrapSpanKeepChildren);
+    // 同时覆盖普通 DOM 与开放 Shadow DOM，并保留原格式。
+    removeInactiveHighlights(new Set([word]));
 
     hideTooltip();
     hoverSeq++;
@@ -1004,12 +999,14 @@
         let shouldRefreshRoots = false;
         for (const m of mutations) {
           if (m.type === "characterData") {
+            if (isExtensionOwnedMutationNode(m.target)) continue;
             shouldRescan = true;
             continue;
           }
           if (m.addedNodes && m.addedNodes.length > 0) {
-            shouldRescan = true;
             for (const added of m.addedNodes) {
+              if (isExtensionOwnedMutationNode(added)) continue;
+              shouldRescan = true;
               if (containsOpenShadowRoot(added)) {
                 shouldRefreshRoots = true;
                 break;
@@ -1046,7 +1043,7 @@
     if (enabledChanged) extensionStateChangedDuringInit = true;
 
     if (changes.mastered_list) {
-      masteredWords = new Set(changes.mastered_list.newValue || []);
+      masteredWords = new Set(sanitizeWordList(changes.mastered_list.newValue || []));
       shouldRescan = true;
     }
 
@@ -1062,6 +1059,7 @@
 
     if (shouldRescan) {
       rebuildVocabulary();
+      removeInactiveHighlights();
     }
 
     if (enabledChanged) {
@@ -1076,7 +1074,7 @@
     if (req && req.action === "twl_ping") {
       sendResponse({
         ok: true,
-        version: "1.13",
+        version: "1.14",
         enabled: extensionEnabled,
         vocabSize: Object.keys(vocabulary || {}).length,
       });
@@ -1103,7 +1101,10 @@
         // 如果之前掌握过，撤销掌握
         if (masteredWords.has(key)) {
           masteredWords.delete(key);
-          safeStorageSet({ mastered_list: Array.from(masteredWords) });
+          safeStorageSet({
+            mastered_list: Array.from(masteredWords),
+            vocab_sync_updated_at: new Date().toISOString(),
+          });
         }
         scheduleRescan();
       });
@@ -1122,7 +1123,7 @@
   ])
     .then(([st, loadedBaseVocab]) => {
       baseVocab = loadedBaseVocab;
-      masteredWords = new Set(st.mastered_list || []);
+      masteredWords = new Set(sanitizeWordList(st.mastered_list || []));
       customVocab = sanitizeWordMap(st.custom_vocab || {});
       deletedWords = new Set(sanitizeWordList(st.deleted_vocab || []));
       rebuildVocabulary();

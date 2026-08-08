@@ -41,6 +41,7 @@ Current product capabilities include:
 - total and weekly point-reading statistics;
 - custom vocabulary management;
 - hidden and restored terms;
+- mastered-word state retained by backups, version restore, and manual synchronization;
 - vocabulary backups and repository snapshots;
 - backup import/export, using JSON as the on-disk format;
 - manual Chrome profile sync with revision, chunk, and hash validation;

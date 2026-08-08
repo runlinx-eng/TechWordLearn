@@ -43,60 +43,52 @@ The demo is not a feature tour. Use the canonical product language:
 
 The user does not begin with a generic vocabulary list and does not manually rank words. Words encountered in real GitHub pages, technical documentation, AI articles, and other daily reading accumulate point-reading counts. The highest counts rise to the top of the popup and “我的词库”.
 
-The final shot must give the first three words the strongest visual emphasis. People naturally notice and remember the top three positions, so the demo should make the next learning decision feel immediate:
+The popup must keep the first three words visually clear throughout the demo. Use deliberately small, unequal counts so viewers can follow every move in one pass:
 
 ```text
-1  evidence     点读 55
-2  routing      点读 51
-3  domain       点读 33
+1  evidence     点读 3
+2  domain       点读 2
+3  approval     点读 1
 ```
 
-The intended takeaway is:
+After `evidence` is mastered, the ending becomes:
+
+```text
+1  domain       点读 2
+2  approval     点读 1
+3  provider     点读 1
+```
+
+The intended takeaway remains:
 
 > 不用先背别人整理的词表。正常阅读一段时间，最实用、最需要注意的生词会自己排到前面；先记前三个就够了。
 
-## 45–60 second demo script
+## 14-second demo script
 
-**0–8 seconds — normal reading, no study setup**
+**0–2 seconds — add one real word**
 
-Quickly move through a public GitHub repository, technical documentation, and an AI article. The user is simply reading, not opening a vocabulary course or choosing a prepared word list.
-
-On-screen text:
-
-> 不用先背词表
-
-**8–22 seconds — useful words keep returning**
-
-Show `evidence`, `routing`, and `domain` appearing in real context. Hover briefly for meaning and click unfamiliar words for pronunciation. Use quick time jumps to suggest this happens naturally across ordinary reading sessions.
+Select `evidence` on a quiet English page, choose “加入词库” from the context menu, and let the word turn yellow. Keep the real popup visible in the upper-right corner.
 
 On-screen text:
 
-> 遇到最多、又反复点读的词，最值得注意
+> 选中生词，右键加入词库
 
-**22–36 seconds — the priority list appears**
+**2–11 seconds — repeated point-reading raises priority**
 
-Open the TechWordLearn popup. Let the ranked list settle into view, then open “我的词库” to show that the same words remain ordered by point-reading count without manual sorting.
+Show `evidence` again three times. Each repetition uses a strict three-second attention handoff: for the first second, only the left page click and pronunciation cue move while the ranking stays still; for the next two seconds, the left side stays still while the right panel shows `点读 +1`, changes the count, moves the row when needed, and holds the result. Use only two or three supporting words so the cause is unmistakable.
 
-**36–50 seconds — remember the top three**
+Do not use a bottom caption, an upward arrow, blur, or an extra enlargement. The only transient labels are attached to the action itself:
 
-Dim the rest of the list and reveal the first three positions one by one:
-
-```text
-1  evidence     点读 55
-2  routing      点读 51
-3  domain       点读 33
-```
-
-On-screen text:
-
-> 今天先记这三个
-
-**50–60 seconds — close on the product value**
-
-Return briefly to the real webpage, then end on:
-
-> 最实用的生词，会自己冒出来等我消灭。
+> 点击听读音 → 播放读音
 >
+> 点读 +1
+
+**11–14 seconds — master one and refill the list**
+
+Use `Option / Alt + 点击` on the first-ranked word, accept the confirmation, and show it leaving the current ranking. The next two words move up and a new third word enters.
+
+On-screen text:
+
 > 记住一个，下一批自然顶上来。
 
 Avoid spending the core demo on backup, synchronization, version history, server settings, or implementation details. Those capabilities may appear in separate supporting material, but they weaken this story.

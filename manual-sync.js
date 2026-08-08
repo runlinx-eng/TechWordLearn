@@ -7,10 +7,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, (root) => {
   "use strict";
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
+  const SUPPORTED_SCHEMA_VERSIONS = new Set([2, SCHEMA_VERSION]);
   const META_KEY = "twl_vocab_sync_meta";
   const CHUNK_KEY_PREFIX = "twl_vocab_sync_chunk_";
-  const LEGACY_KEYS = ["custom_vocab", "deleted_vocab", "vocab_sync_updated_at"];
+  const LEGACY_KEYS = [
+    "custom_vocab",
+    "deleted_vocab",
+    "mastered_list",
+    "vocab_sync_updated_at",
+  ];
   const LOCAL_BASE_REVISION_KEY = "twl_manual_sync_base_revision";
   const LOCAL_BASE_FINGERPRINT_KEY = "twl_manual_sync_base_fingerprint";
   const LOCAL_DEVICE_ID_KEY = "twl_manual_sync_device_id";
@@ -55,15 +61,30 @@
     const deleted = sanitizeWordList(raw && raw.deleted_vocab)
       .filter((word) => !Object.prototype.hasOwnProperty.call(custom, word))
       .sort();
+    const mastered = sanitizeWordList(raw && raw.mastered_list).sort();
     const sortedCustom = {};
     for (const word of Object.keys(custom).sort()) {
       sortedCustom[word] = custom[word];
     }
-    return { custom_vocab: sortedCustom, deleted_vocab: deleted };
+    return {
+      custom_vocab: sortedCustom,
+      deleted_vocab: deleted,
+      mastered_list: mastered,
+    };
+  }
+
+  function stableStateJsonForSchema(raw, schemaVersion) {
+    const state = normalizeState(raw);
+    const payload = {
+      custom_vocab: state.custom_vocab,
+      deleted_vocab: state.deleted_vocab,
+    };
+    if (schemaVersion >= 3) payload.mastered_list = state.mastered_list;
+    return JSON.stringify(payload);
   }
 
   function stableStateJson(raw) {
-    return JSON.stringify(normalizeState(raw));
+    return stableStateJsonForSchema(raw, SCHEMA_VERSION);
   }
 
   function textEncoder() {
@@ -85,8 +106,12 @@
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
+  async function stateFingerprintForSchema(raw, schemaVersion) {
+    return sha256Hex(stableStateJsonForSchema(raw, schemaVersion));
+  }
+
   async function stateFingerprint(raw) {
-    return sha256Hex(stableStateJson(raw));
+    return stateFingerprintForSchema(raw, SCHEMA_VERSION);
   }
 
   function splitForStorage(value, maxSerializedValueBytes = MAX_CHUNK_VALUE_BYTES) {
@@ -177,6 +202,7 @@
       updated_by: safeGenerationPart(opts.deviceId, "unknown"),
       custom_count: Object.keys(state.custom_vocab).length,
       deleted_count: state.deleted_vocab.length,
+      mastered_count: state.mastered_list.length,
     };
     const allItems = { ...chunkItems, [META_KEY]: meta };
     for (const [key, value] of Object.entries(allItems)) {
@@ -195,7 +221,9 @@
 
   function validateMeta(meta) {
     if (!meta || typeof meta !== "object" || Array.isArray(meta)) throw new Error("invalid_sync_meta");
-    if (meta.schema_version !== SCHEMA_VERSION) throw new Error("unsupported_sync_schema");
+    if (!SUPPORTED_SCHEMA_VERSIONS.has(meta.schema_version)) {
+      throw new Error("unsupported_sync_schema");
+    }
     if (!Number.isSafeInteger(meta.revision) || meta.revision < 1) throw new Error("invalid_sync_revision");
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(meta.generation || ""))) {
       throw new Error("invalid_sync_generation");
@@ -237,8 +265,8 @@
       chunks.push(items[key]);
     }
     const payload = chunks.join("");
-    const fingerprint = await sha256Hex(payload);
-    if (fingerprint !== meta.content_sha256) throw new Error("sync_snapshot_hash_mismatch");
+    const transportFingerprint = await sha256Hex(payload);
+    if (transportFingerprint !== meta.content_sha256) throw new Error("sync_snapshot_hash_mismatch");
 
     let parsed;
     try {
@@ -247,7 +275,10 @@
       throw new Error("sync_snapshot_invalid_json");
     }
     const state = normalizeState(parsed);
-    if (stableStateJson(state) !== payload) throw new Error("sync_snapshot_not_canonical");
+    if (stableStateJsonForSchema(state, meta.schema_version) !== payload) {
+      throw new Error("sync_snapshot_not_canonical");
+    }
+    const fingerprint = await stateFingerprint(state);
     return {
       kind: "snapshot",
       revision: meta.revision,
@@ -255,6 +286,8 @@
       updatedAt: typeof meta.updated_at === "string" ? meta.updated_at : "",
       state,
       fingerprint,
+      transportFingerprint,
+      schemaVersion: meta.schema_version,
       meta,
     };
   }
@@ -293,6 +326,7 @@
     utf8ByteLength,
     sha256Hex,
     stateFingerprint,
+    stateFingerprintForSchema,
     splitForStorage,
     makeGeneration,
     chunkKey,

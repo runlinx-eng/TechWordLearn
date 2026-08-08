@@ -22,7 +22,11 @@ function makeState(count, definitionSize = 24) {
   for (let index = 0; index < count; index += 1) {
     custom[`term${alphaId(index)}`] = `定义 ${alphaId(index)} ${"技术语境".repeat(definitionSize)}`;
   }
-  return { custom_vocab: custom, deleted_vocab: ["obsolete", "obsolete"] };
+  return {
+    custom_vocab: custom,
+    deleted_vocab: ["obsolete", "obsolete"],
+    mastered_list: ["routing", "evidence", "routing"],
+  };
 }
 
 test("normalizes vocabulary deterministically", () => {
@@ -30,10 +34,12 @@ test("normalizes vocabulary deterministically", () => {
     manualSync.normalizeState({
       custom_vocab: { API: "  application interface  ", "bad key": "ignored tail" },
       deleted_vocab: ["API", "Legacy", "legacy", ""],
+      mastered_list: ["Routing", "evidence", "routing"],
     }),
     {
       custom_vocab: { api: "application interface", bad: "ignored tail" },
       deleted_vocab: ["legacy"],
+      mastered_list: ["evidence", "routing"],
     }
   );
 });
@@ -58,6 +64,8 @@ test("builds and decodes a multi-chunk snapshot with revision and hash validatio
   });
   assert.ok(Object.keys(built.chunkItems).length > 1);
   assert.equal(built.meta.revision, 7);
+  assert.equal(built.meta.schema_version, 3);
+  assert.equal(built.meta.mastered_count, 2);
   assert.ok(manualSync.itemsStorageBytes(built.allItems) <= manualSync.MAX_SNAPSHOT_STORAGE_BYTES);
   for (const [key, value] of Object.entries(built.allItems)) {
     assert.ok(manualSync.itemStorageBytes(key, value) < 8192);
@@ -86,6 +94,7 @@ test("reads the previous unchunked Chrome Sync format without mutating it", asyn
   const decoded = await manualSync.decodeSnapshot({
     custom_vocab: { Kernel: "内核" },
     deleted_vocab: ["legacy"],
+    mastered_list: ["Evidence"],
     vocab_sync_updated_at: "2026-07-28T15:00:05Z",
   });
   assert.equal(decoded.kind, "legacy");
@@ -93,7 +102,42 @@ test("reads the previous unchunked Chrome Sync format without mutating it", asyn
   assert.deepEqual(decoded.state, {
     custom_vocab: { kernel: "内核" },
     deleted_vocab: ["legacy"],
+    mastered_list: ["evidence"],
   });
+});
+
+test("decodes schema 2 snapshots as mastered-empty state and exposes a migration fingerprint", async () => {
+  const payload = JSON.stringify({
+    custom_vocab: { kernel: "内核" },
+    deleted_vocab: ["legacy"],
+  });
+  const transportFingerprint = await manualSync.sha256Hex(payload);
+  const generation = "schema-two-fixture";
+  const items = {
+    [manualSync.chunkKey(generation, 0)]: payload,
+    [manualSync.META_KEY]: {
+      schema_version: 2,
+      revision: 9,
+      generation,
+      chunk_count: 1,
+      content_sha256: transportFingerprint,
+      updated_at: "2026-08-07T00:00:00.000Z",
+      updated_by: "old-device",
+      custom_count: 1,
+      deleted_count: 1,
+    },
+  };
+
+  const decoded = await manualSync.decodeSnapshot(items);
+  assert.equal(decoded.schemaVersion, 2);
+  assert.equal(decoded.transportFingerprint, transportFingerprint);
+  assert.notEqual(decoded.fingerprint, transportFingerprint);
+  assert.deepEqual(decoded.state, {
+    custom_vocab: { kernel: "内核" },
+    deleted_vocab: ["legacy"],
+    mastered_list: [],
+  });
+  assert.equal(decoded.fingerprint, await manualSync.stateFingerprint(decoded.state));
 });
 
 test("classifies one-sided changes and conflicts from the saved base fingerprint", () => {

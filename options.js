@@ -16,6 +16,7 @@ let customVocab = {};
 let wordCounts = {};
 let weeklyWordCounts = {};
 let deletedSet = new Set();
+let masteredSet = new Set();
 let backups = [];
 let rows = [];
 let currentFilter = "";
@@ -406,6 +407,7 @@ async function inspectManualSync() {
   const localKeys = [
     "custom_vocab",
     "deleted_vocab",
+    "mastered_list",
     "vocab_backups",
     manualSync.LOCAL_BASE_REVISION_KEY,
     manualSync.LOCAL_BASE_FINGERPRINT_KEY,
@@ -421,10 +423,25 @@ async function inspectManualSync() {
     manualSync.stateFingerprint(localState),
     manualSync.decodeSnapshot(remoteItems),
   ]);
-  const baseFingerprint =
+  let baseFingerprint =
     typeof localItems[manualSync.LOCAL_BASE_FINGERPRINT_KEY] === "string"
       ? localItems[manualSync.LOCAL_BASE_FINGERPRINT_KEY]
       : "";
+  if (
+    remote &&
+    remote.transportFingerprint &&
+    baseFingerprint === remote.transportFingerprint
+  ) {
+    baseFingerprint = remote.fingerprint;
+  } else if (baseFingerprint) {
+    const localSchemaTwoFingerprint = await manualSync.stateFingerprintForSchema(localState, 2);
+    if (baseFingerprint === localSchemaTwoFingerprint) {
+      baseFingerprint = await manualSync.stateFingerprint({
+        ...localState,
+        mastered_list: [],
+      });
+    }
+  }
   const rawBaseRevision = Number(localItems[manualSync.LOCAL_BASE_REVISION_KEY]);
   const baseRevision = Number.isSafeInteger(rawBaseRevision) && rawBaseRevision >= 0 ? rawBaseRevision : 0;
   return {
@@ -453,7 +470,13 @@ function hideManualSyncActions() {
 
 function manualSyncCounts(state) {
   const normalized = manualSync.normalizeState(state);
-  return `${Object.keys(normalized.custom_vocab).length} 个自己添加或修改，${normalized.deleted_vocab.length} 个已隐藏`;
+  return `${Object.keys(normalized.custom_vocab).length} 个自己添加或修改，${normalized.deleted_vocab.length} 个已隐藏，${normalized.mastered_list.length} 个已掌握`;
+}
+
+function remoteNeedsSnapshotMigration(remote) {
+  if (!remote) return false;
+  if (remote.kind === "legacy") return true;
+  return remote.kind === "snapshot" && remote.schemaVersion < manualSync.SCHEMA_VERSION;
 }
 
 function renderManualSyncContext(context) {
@@ -468,7 +491,7 @@ function renderManualSyncContext(context) {
     : "共享：尚无快照";
 
   if (context.status === "in_sync") {
-    if (context.remote && context.remote.kind === "legacy") {
+    if (remoteNeedsSnapshotMigration(context.remote)) {
       manualSyncSummaryEl.textContent = `${localLabel}；${remoteLabel}。内容一致，但共享区仍是旧格式，可点击迁移。`;
       uploadManualSyncBtn.textContent = "迁移为安全分块快照";
       uploadManualSyncBtn.hidden = false;
@@ -561,7 +584,7 @@ async function checkManualSyncStatus() {
 
 function uploadAllowed(context) {
   if (!context) return false;
-  if (context.status === "in_sync") return Boolean(context.remote && context.remote.kind === "legacy");
+  if (context.status === "in_sync") return remoteNeedsSnapshotMigration(context.remote);
   return ["remote_missing", "local_ahead", "conflict", "conflict_unlinked"].includes(context.status);
 }
 
@@ -663,6 +686,7 @@ async function downloadManualSnapshot() {
       label: `before_manual_sync_download:r${context.remote.revision}`,
       custom_vocab: context.localState.custom_vocab,
       deleted_vocab: context.localState.deleted_vocab,
+      mastered_list: context.localState.mastered_list,
     };
     const storedBackups = Array.isArray(context.localItems.vocab_backups)
       ? context.localItems.vocab_backups
@@ -671,6 +695,7 @@ async function downloadManualSnapshot() {
     await storageSet("local", {
       custom_vocab: context.remote.state.custom_vocab,
       deleted_vocab: context.remote.state.deleted_vocab,
+      mastered_list: context.remote.state.mastered_list,
       vocab_backups: nextBackups,
       current_vocab_version_id: null,
       current_vocab_mode: "live",
@@ -683,6 +708,7 @@ async function downloadManualSnapshot() {
 
     customVocab = context.remote.state.custom_vocab;
     deletedSet = new Set(context.remote.state.deleted_vocab);
+    masteredSet = new Set(context.remote.state.mastered_list);
     backups = nextBackups;
     currentVersionId = null;
     currentVersionMode = "live";
@@ -1029,6 +1055,18 @@ function versionDiffRows(snapshot) {
     }
   }
 
+  const versionMastered = new Set(sanitizeWordList(snapshot && snapshot.mastered_list));
+  const masteryWords = new Set([...versionMastered, ...masteredSet]);
+  for (const word of masteryWords) {
+    const versionHas = versionMastered.has(word);
+    const liveHas = masteredSet.has(word);
+    if (!versionHas && liveHas) {
+      diffs.push({ kind: "当前已掌握", word, detail: "当前已退出重点排行" });
+    } else if (versionHas && !liveHas) {
+      diffs.push({ kind: "当前未掌握", word, detail: "恢复后会退出重点排行" });
+    }
+  }
+
   return diffs.sort((a, b) => a.kind.localeCompare(b.kind) || a.word.localeCompare(b.word));
 }
 
@@ -1064,9 +1102,11 @@ function renderVersionPreview(list) {
   const added = diffs.filter((row) => row.kind === "当前新增").length;
   const removed = diffs.filter((row) => row.kind === "当前已移除").length;
   const modified = diffs.filter((row) => row.kind === "释义已修改").length;
+  const mastered = diffs.filter((row) => row.kind === "当前已掌握").length;
+  const unmastered = diffs.filter((row) => row.kind === "当前未掌握").length;
   const summary = document.createElement("p");
   summary.className = "version-diff-summary";
-  summary.textContent = `当前新增 ${added} · 当前移除 ${removed} · 释义修改 ${modified}`;
+  summary.textContent = `当前新增 ${added} · 当前移除 ${removed} · 释义修改 ${modified} · 掌握变化 ${mastered + unmastered}`;
   versionPreviewListEl.appendChild(summary);
 
   diffs.forEach((row) => {
@@ -1183,7 +1223,8 @@ function renderVersions() {
     meta.className = "meta";
     const customCount = Object.keys(snapshot.custom_vocab || {}).length;
     const deletedCount = Array.isArray(snapshot.deleted_vocab) ? snapshot.deleted_vocab.length : 0;
-    meta.textContent = `${customCount} 个自己添加或修改 | ${deletedCount} 个已隐藏`;
+    const masteredCount = Array.isArray(snapshot.mastered_list) ? snapshot.mastered_list.length : 0;
+    meta.textContent = `${customCount} 个自己添加或修改 | ${deletedCount} 个已隐藏 | ${masteredCount} 个已掌握`;
     item.appendChild(meta);
 
     const label = document.createElement("p");
@@ -1330,9 +1371,10 @@ function ensureLiveEditable() {
   return false;
 }
 
-function saveState(nextCustom, nextDeleted, label) {
+function saveState(nextCustom, nextDeleted, label, nextMastered = masteredSet) {
   const cleanCustom = sanitizeWordMap(nextCustom);
   const cleanDeleted = sanitizeWordList(Array.from(nextDeleted || []));
+  const cleanMastered = sanitizeWordList(Array.from(nextMastered || []));
 
   for (const w of Object.keys(cleanCustom)) {
     const idx = cleanDeleted.indexOf(w);
@@ -1345,6 +1387,7 @@ function saveState(nextCustom, nextDeleted, label) {
     label: label || "manual",
     custom_vocab: sanitizeWordMap(customVocab),
     deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+    mastered_list: sanitizeWordList(Array.from(masteredSet)),
   };
 
   const nextBackups = [snapshot, ...backups].slice(0, MAX_BACKUPS);
@@ -1352,6 +1395,7 @@ function saveState(nextCustom, nextDeleted, label) {
     {
       custom_vocab: cleanCustom,
       deleted_vocab: cleanDeleted,
+      mastered_list: cleanMastered,
       vocab_backups: nextBackups,
       current_vocab_version_id: null,
       current_vocab_mode: "live",
@@ -1365,6 +1409,7 @@ function saveState(nextCustom, nextDeleted, label) {
       }
       customVocab = cleanCustom;
       deletedSet = new Set(cleanDeleted);
+      masteredSet = new Set(cleanMastered);
       backups = nextBackups;
       currentVersionId = null;
       currentVersionMode = "live";
@@ -1450,7 +1495,7 @@ function setCurrentVersion() {
     return;
   }
 
-  if (!window.confirm(`将 ${formatTime(snapshot.at)} 设为当前词库版本？`)) return;
+  if (!window.confirm(`将 ${formatTime(snapshot.at)} 设为当前词库版本？词库和“已掌握”状态都会恢复。`)) return;
 
   const currentSnapshot = {
     id: makeId(),
@@ -1458,16 +1503,19 @@ function setCurrentVersion() {
     label: "before_set_current",
     custom_vocab: sanitizeWordMap(customVocab),
     deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+    mastered_list: sanitizeWordList(Array.from(masteredSet)),
   };
 
   const nextBackups = [currentSnapshot, ...backups].slice(0, MAX_BACKUPS);
   const restoredCustom = sanitizeWordMap(snapshot.custom_vocab);
   const restoredDeleted = sanitizeWordList(snapshot.deleted_vocab);
+  const restoredMastered = sanitizeWordList(snapshot.mastered_list);
 
   chrome.storage.local.set(
     {
       custom_vocab: restoredCustom,
       deleted_vocab: restoredDeleted,
+      mastered_list: restoredMastered,
       vocab_backups: nextBackups,
       current_vocab_version_id: snapshot.id,
       current_vocab_mode: "version",
@@ -1481,6 +1529,7 @@ function setCurrentVersion() {
       }
       customVocab = restoredCustom;
       deletedSet = new Set(restoredDeleted);
+      masteredSet = new Set(restoredMastered);
       backups = nextBackups;
       currentVersionId = snapshot.id;
       currentVersionMode = "version";
@@ -1529,6 +1578,7 @@ function exportJson() {
     exported_at: new Date().toISOString(),
     custom_vocab: sanitizeWordMap(customVocab),
     deleted_vocab: sanitizeWordList(Array.from(deletedSet)),
+    mastered_list: sanitizeWordList(Array.from(masteredSet)),
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1551,16 +1601,22 @@ function parseImportPayload(obj) {
     throw new Error("备份文件格式错误");
   }
 
-  if (obj.custom_vocab || obj.deleted_vocab) {
+  if (
+    Object.prototype.hasOwnProperty.call(obj, "custom_vocab") ||
+    Object.prototype.hasOwnProperty.call(obj, "deleted_vocab") ||
+    Object.prototype.hasOwnProperty.call(obj, "mastered_list")
+  ) {
     return {
       custom: sanitizeWordMap(obj.custom_vocab),
       deleted: sanitizeWordList(obj.deleted_vocab),
+      mastered: sanitizeWordList(obj.mastered_list),
     };
   }
 
   return {
     custom: sanitizeWordMap(obj),
     deleted: [],
+    mastered: [],
   };
 }
 
@@ -1573,7 +1629,7 @@ function importJson(file) {
       const parsed = JSON.parse(String(reader.result || "{}"));
       const incoming = parseImportPayload(parsed);
 
-      if (!window.confirm("导入备份会和当前词库合并，同名单词将被覆盖。继续？")) {
+      if (!window.confirm("导入备份会和当前词库及“已掌握”状态合并，同名单词将被覆盖。继续？")) {
         return;
       }
 
@@ -1582,8 +1638,9 @@ function importJson(file) {
       for (const word of Object.keys(incoming.custom)) {
         nextDeleted.delete(word);
       }
+      const nextMastered = new Set([...masteredSet, ...incoming.mastered]);
 
-      saveState(nextCustom, nextDeleted, "import_json");
+      saveState(nextCustom, nextDeleted, "import_json", nextMastered);
     } catch (err) {
       setStatus(`导入失败: ${err.message}`, true);
     }
@@ -1683,6 +1740,7 @@ function loadStorage(showStatus = true) {
     wordCounts = extractWordCounts(items);
     weeklyWordCounts = sanitizeWeeklyWordCounts(items.weekly_word_counts);
     deletedSet = new Set(sanitizeWordList(items.deleted_vocab));
+    masteredSet = new Set(sanitizeWordList(items.mastered_list));
 
     backups = Array.isArray(items.vocab_backups)
       ? items.vocab_backups
@@ -1692,6 +1750,7 @@ function loadStorage(showStatus = true) {
             label: typeof item.label === "string" ? item.label : "manual",
             custom_vocab: sanitizeWordMap(item.custom_vocab),
             deleted_vocab: sanitizeWordList(item.deleted_vocab),
+            mastered_list: sanitizeWordList(item.mastered_list),
           }))
           .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
           .slice(0, MAX_BACKUPS)
@@ -1801,10 +1860,10 @@ function bindEvents() {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
 
-    if (changes.custom_vocab || changes.deleted_vocab) {
+    if (changes.custom_vocab || changes.deleted_vocab || changes.mastered_list) {
       manualSyncContext = null;
       hideManualSyncActions();
-      manualSyncSummaryEl.textContent = "本机词库已变化，请点击“检查 Chrome 同步”。";
+      manualSyncSummaryEl.textContent = "本机词库或掌握状态已变化，请点击“检查 Chrome 同步”。";
     }
 
     const hasCountChange = Object.entries(changes).some(([key, diff]) => {
@@ -1818,6 +1877,7 @@ function bindEvents() {
     if (
       changes.custom_vocab ||
       changes.deleted_vocab ||
+      changes.mastered_list ||
       changes.vocab_backups ||
       changes.current_vocab_version_id ||
       changes.current_vocab_mode ||

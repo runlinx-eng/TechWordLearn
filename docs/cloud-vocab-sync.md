@@ -4,9 +4,10 @@
 
 - `custom_vocab`
 - `deleted_vocab`
+- `mastered_list`
 - `vocab_sync_updated_at`
 
-它不会改动仓库里的基线 `vocabulary.json`，也不会同步 macOS App 的 SQLite 统计数据。
+它不会改动仓库里的基线 `vocabulary.json`，也不会同步点读次数或 macOS App 的 SQLite 统计数据。
 
 ## 协议
 
@@ -28,13 +29,16 @@
   "deleted_vocab": [
     "latency"
   ],
+  "mastered_list": [
+    "evidence"
+  ],
   "vocab_sync_updated_at": "2026-03-07T10:22:11.000Z",
   "reason": "manual_request",
   "client": "twl_abc123"
 }
 ```
 
-服务端返回同样结构的 JSON 状态；仅在这次手动请求中，扩展会根据现有协议处理返回状态。此自托管协议与 Chrome 手动快照使用的 revision/hash 协议相互独立。
+服务端返回同样结构的 JSON 状态；仅在这次手动请求中，扩展会根据现有协议处理返回状态。旧服务端状态缺少 `mastered_list` 时按空列表兼容。此自托管协议与 Chrome 手动快照使用的 revision/hash 协议相互独立。
 
 ## 启动服务端
 

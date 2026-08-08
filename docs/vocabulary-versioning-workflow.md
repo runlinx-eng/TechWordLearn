@@ -12,7 +12,7 @@
 
 ## 二、每周流程（推荐周五）
 
-1. 在扩展“我的词库”页选择“···”→“导出备份”。备份文件为 JSON，包含 `custom_vocab` / `deleted_vocab`。
+1. 在扩展“我的词库”页选择“···”→“导出备份”。备份文件为 JSON，包含 `custom_vocab` / `deleted_vocab` / `mastered_list`。
 2. 将导出文件放到项目中，例如：`imports/weekly-export-YYYY-MM-DD.json`
 3. 生成周快照：
 
@@ -81,7 +81,7 @@ node scripts/vocab-version.js promote \
 `scripts/vocab-version.js` 支持三类输入：
 
 1. 纯词典 JSON：`{"algorithm":"..."}`  
-2. 扩展导出格式：`{"custom_vocab": {...}, "deleted_vocab": [...]}`  
+2. 扩展导出格式：`{"custom_vocab": {...}, "deleted_vocab": [...], "mastered_list": [...]}`（仓库词库脚本只提取词条内容，不把个人掌握状态发布到 `vocabulary.json`）
 3. 本脚本生成的快照格式：`{"meta": {...}, "vocab": {...}}`
 
 ## 六、命令速查

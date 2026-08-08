@@ -37,6 +37,6 @@ Use `bash scripts/package-extension.sh <output-dir>` only when a package is need
 - User-facing copy says “导入备份 / 导出备份”; JSON is only the file format.
 - Do not commit credentials, local browser state, generated packages, dependencies, or build output.
 
-## Current state and next boundary
+## Current state and release boundary
 
-Version identity is in `manifest.json`. The current product is a locally installable open-source prototype, not a Chrome Web Store release or hosted SaaS. The next release boundary is fresh-profile manual verification followed by a separately authorized commit, push, and release decision.
+Version identity is in `manifest.json`. The current product is a locally installable open-source prototype, not a Chrome Web Store release or hosted SaaS. Every future release still requires fresh-profile manual verification and separately authorized commit, push, and release actions; a pushed GitHub revision is not Chrome Web Store publication or human acceptance.

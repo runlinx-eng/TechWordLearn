@@ -1,6 +1,6 @@
-console.log("[TechWordLearn] background.js active v1.13");
+console.log("[TechWordLearn] background.js active v1.14");
 
-const VOCAB_SYNC_KEYS = ["custom_vocab", "deleted_vocab"];
+const VOCAB_SYNC_KEYS = ["custom_vocab", "deleted_vocab", "mastered_list"];
 const VOCAB_SYNC_STAMP_KEY = "vocab_sync_updated_at";
 const VOCAB_SYNC_ALL_KEYS = [...VOCAB_SYNC_KEYS, VOCAB_SYNC_STAMP_KEY];
 const EXTENSION_ENABLED_KEY = "extension_enabled";
@@ -24,6 +24,7 @@ const CLOUD_SYNC_CONFIG_KEYS = [
 const CLOUD_REQUEST_TIMEOUT_MS = 6000;
 
 let cloudSyncInFlight = false;
+let wordCountWriteQueue = Promise.resolve();
 
 function normalizeWord(raw) {
   const m = String(raw || "").match(/[A-Za-z][A-Za-z'-]*/);
@@ -56,12 +57,58 @@ function sanitizeWordList(raw) {
   return out;
 }
 
+function sanitizeWordCountMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const word = normalizeWord(key);
+    if (!word || word !== key) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    out[word] = Math.floor(value);
+  }
+  return out;
+}
+
+function sanitizeWeeklyWordCounts(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [weekKey, value] of Object.entries(raw)) {
+    if (!/^\d{4}-W\d{2}$/.test(weekKey)) continue;
+    out[weekKey] = sanitizeWordCountMap(value);
+  }
+  return out;
+}
+
+function getCurrentWeekKey() {
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+function pruneWeeklyWordCounts(weeklyMap, keep) {
+  const keys = Object.keys(weeklyMap).sort((a, b) => b.localeCompare(a));
+  const next = {};
+  for (let index = 0; index < keys.length && index < keep; index += 1) {
+    next[keys[index]] = weeklyMap[keys[index]];
+  }
+  return next;
+}
+
 function normalizeVocabState(raw) {
   const custom = sanitizeWordMap(raw && raw.custom_vocab);
   const deleted = sanitizeWordList(raw && raw.deleted_vocab).filter(
     (word) => !Object.prototype.hasOwnProperty.call(custom, word)
   );
-  return { custom_vocab: custom, deleted_vocab: deleted };
+  const mastered = sanitizeWordList(raw && raw.mastered_list);
+  return {
+    custom_vocab: custom,
+    deleted_vocab: deleted.sort(),
+    mastered_list: mastered.sort(),
+  };
 }
 
 function stableSortValue(value) {
@@ -99,12 +146,14 @@ function mergeStatesPreferIncoming(baseState, incomingState) {
   const b = normalizeVocabState(incomingState);
   const mergedCustom = { ...a.custom_vocab, ...b.custom_vocab };
   const mergedDeletedSet = new Set([...a.deleted_vocab, ...b.deleted_vocab]);
+  const mergedMasteredSet = new Set([...a.mastered_list, ...b.mastered_list]);
   for (const word of Object.keys(mergedCustom)) {
     mergedDeletedSet.delete(word);
   }
   return {
     custom_vocab: mergedCustom,
-    deleted_vocab: Array.from(mergedDeletedSet),
+    deleted_vocab: Array.from(mergedDeletedSet).sort(),
+    mastered_list: Array.from(mergedMasteredSet).sort(),
   };
 }
 
@@ -152,6 +201,50 @@ function setStorage(areaName, payload) {
       resolve();
     });
   });
+}
+
+function getLocalStorageStrict(keys) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(keys, (items) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(items || {});
+    });
+  });
+}
+
+async function incrementWordCount(rawWord) {
+  const input = String(rawWord || "").trim().toLowerCase();
+  const word = normalizeWord(input);
+  if (!word || word !== input) throw new Error("invalid_word");
+
+  const items = await getLocalStorageStrict([word, "weekly_word_counts"]);
+  const previousTotal =
+    typeof items[word] === "number" && Number.isFinite(items[word]) && items[word] >= 0
+      ? Math.floor(items[word])
+      : 0;
+  const weekly = sanitizeWeeklyWordCounts(items.weekly_word_counts);
+  const weekKey = getCurrentWeekKey();
+  const oneWeek = sanitizeWordCountMap(weekly[weekKey]);
+  const nextTotal = previousTotal + 1;
+  const nextWeekly = (oneWeek[word] || 0) + 1;
+  oneWeek[word] = nextWeekly;
+  weekly[weekKey] = oneWeek;
+
+  await setStorage("local", {
+    [word]: nextTotal,
+    weekly_word_counts: pruneWeeklyWordCounts(weekly, 12),
+  });
+  return { word, total: nextTotal, weekly: nextWeekly, weekKey };
+}
+
+function enqueueWordCountIncrement(word) {
+  const task = wordCountWriteQueue.then(() => incrementWordCount(word));
+  wordCountWriteQueue = task.catch(() => {});
+  return task;
 }
 
 function sanitizeCloudEndpoint(raw) {
@@ -389,12 +482,6 @@ function isInjectableTabUrl(url) {
   return /^(https?:\/\/|file:\/\/)/i.test(String(url || ""));
 }
 
-function isExplicitlyBlockedTabUrl(url) {
-  return /^(about:|chrome:\/\/|chrome-extension:\/\/|devtools:\/\/|edge:\/\/|brave:\/\/)/i.test(
-    String(url || "")
-  );
-}
-
 function saveInjectDiag(payload) {
   if (!chrome.storage || !chrome.storage.local || !chrome.storage.local.set) return;
   chrome.storage.local.set({ [INJECT_DIAG_KEY]: payload }, () => {
@@ -415,7 +502,6 @@ function recordInjectDiag(stage, tabId, url, extra) {
 function injectContentIntoTab(tabId, url) {
   if (!chrome.scripting || !chrome.scripting.executeScript || !chrome.scripting.insertCSS) return;
   if (!tabId) return;
-  recordInjectDiag("inject_start", tabId, url);
 
   chrome.scripting.insertCSS(
     {
@@ -429,8 +515,6 @@ function injectContentIntoTab(tabId, url) {
         recordInjectDiag("css_error", tabId, url, { message: err.message || String(err) });
         return;
       }
-      console.log(`[TechWordLearn] insertCSS ok tab=${tabId} url=${String(url || "")}`);
-      recordInjectDiag("css_ok", tabId, url);
     }
   );
 
@@ -439,7 +523,7 @@ function injectContentIntoTab(tabId, url) {
       target: { tabId, allFrames: true },
       files: ["content.js"],
     },
-    (results) => {
+    () => {
       const err = chrome.runtime.lastError;
       if (err) {
         console.warn(
@@ -448,16 +532,17 @@ function injectContentIntoTab(tabId, url) {
         recordInjectDiag("js_error", tabId, url, { message: err.message || String(err) });
         return;
       }
-      console.log(
-        `[TechWordLearn] executeScript ok tab=${tabId} url=${String(url || "")} frames=${
-          Array.isArray(results) ? results.length : 0
-        }`
-      );
-      recordInjectDiag("js_ok", tabId, url, {
-        frameResultCount: Array.isArray(results) ? results.length : 0,
-      });
     }
   );
+}
+
+function ensureContentInTab(tabId, url) {
+  if (!tabId || !chrome.tabs || !chrome.tabs.sendMessage) return;
+  chrome.tabs.sendMessage(tabId, { action: "twl_ping" }, (response) => {
+    const pingError = chrome.runtime.lastError;
+    if (!pingError && response && response.ok) return;
+    injectContentIntoTab(tabId, url);
+  });
 }
 
 async function reinjectOpenTabs() {
@@ -470,34 +555,10 @@ async function reinjectOpenTabs() {
       if (!tab || !tab.id) continue;
       const url = String(tab.url || "");
       if (url && !isInjectableTabUrl(url)) continue;
-      injectContentIntoTab(tab.id, url);
+      ensureContentInTab(tab.id, url);
     }
   });
 }
-
-async function maybeInjectTab(tabId, url) {
-  if (!tabId) return;
-  const normalizedUrl = String(url || "");
-  if (normalizedUrl && !isInjectableTabUrl(normalizedUrl)) {
-    if (isExplicitlyBlockedTabUrl(normalizedUrl)) {
-      recordInjectDiag("skip_blocked_scheme", tabId, normalizedUrl);
-      return;
-    }
-    recordInjectDiag("skip_unknown_scheme", tabId, normalizedUrl);
-    return;
-  }
-
-  const items = await getStorage("local", [EXTENSION_ENABLED_KEY]);
-  if (items[EXTENSION_ENABLED_KEY] === false) {
-    recordInjectDiag("skip_extension_disabled", tabId, normalizedUrl);
-    return;
-  }
-  injectContentIntoTab(tabId, normalizedUrl);
-}
-
-// service worker 被重载/唤醒时也主动补注入，避免旧页面残留失效 content script
-reinjectOpenTabs();
-void refreshGlobalEnabledUi();
 
 chrome.runtime.onInstalled.addListener(() => {
   if (chrome.contextMenus && chrome.contextMenus.removeAll && chrome.contextMenus.create) {
@@ -517,30 +578,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 if (chrome.runtime && chrome.runtime.onStartup) {
   chrome.runtime.onStartup.addListener(() => {
-    reinjectOpenTabs();
-  });
-}
-
-if (chrome.tabs && chrome.tabs.onUpdated) {
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (!tabId) return;
-    if (changeInfo && changeInfo.status === "complete") {
-      maybeInjectTab(tabId, (tab && tab.url) || "");
-      return;
-    }
-    if (typeof changeInfo.url === "string") {
-      maybeInjectTab(tabId, changeInfo.url);
-    }
-  });
-}
-
-if (chrome.tabs && chrome.tabs.onActivated && chrome.tabs.get) {
-  chrome.tabs.onActivated.addListener((activeInfo) => {
-    if (!activeInfo || !activeInfo.tabId) return;
-    chrome.tabs.get(activeInfo.tabId, (tab) => {
-      if (chrome.runtime.lastError) return;
-      maybeInjectTab(activeInfo.tabId, (tab && tab.url) || "");
-    });
+    void refreshGlobalEnabledUi();
   });
 }
 
@@ -570,6 +608,15 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
 
   if (req.action === "sync_cloud_now") {
     void syncViaCloud("manual_request").then(sendResponse);
+    return true;
+  }
+
+  if (req.action === "increment_word_count") {
+    void enqueueWordCountIncrement(req.word)
+      .then((result) => sendResponse({ ok: true, ...result }))
+      .catch((err) => {
+        sendResponse({ ok: false, error: (err && err.message) || "count_update_failed" });
+      });
     return true;
   }
 

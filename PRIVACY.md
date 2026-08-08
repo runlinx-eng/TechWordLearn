@@ -35,7 +35,7 @@ Removing the extension or clearing its storage may remove this data.
 
 ## Chrome profile sync
 
-The extension uses `chrome.storage.sync` only after the user clicks a manual sync control. A shared snapshot contains custom vocabulary, deleted vocabulary, a monotonic revision, a content hash, and technical chunk metadata.
+The extension uses `chrome.storage.sync` only after the user clicks a manual sync control. A shared snapshot contains custom vocabulary, deleted vocabulary, mastered-word state, a monotonic revision, a content hash, and technical chunk metadata.
 
 TechWordLearn does not watch `chrome.storage.sync` for automatic imports and does not publish local vocabulary changes automatically. Chrome controls whether and how a snapshot already saved by the user is transported with the signed-in browser profile. Users should review Chrome sync settings if they do not want that browser-managed transport.
 
@@ -53,6 +53,7 @@ When enabled, the extension may send the following to the user-configured endpoi
 
 - custom vocabulary and definitions;
 - deleted vocabulary;
+- mastered-word state;
 - synchronization timestamp;
 - locally generated device identifier;
 - authorization header containing the configured Bearer token, when provided.

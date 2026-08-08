@@ -7,7 +7,8 @@
 - [ ] Add `PRIVACY.md`
 - [ ] Add `docs/showcase/SUBMISSION.md`
 - [ ] Add `docs/showcase/MEDIA_CHECKLIST.md`
-- [ ] Add a real `docs/showcase/techwordlearn-cover.png`
+- [ ] Add the three README demo GIFs under `docs/showcase/`
+- [ ] Keep `docs/showcase/techwordlearn-cover.png` available for external showcase use
 - [ ] Confirm every README claim matches current code
 - [ ] Confirm no local paths, tokens, secrets, or internal-only instructions are published
 
@@ -45,9 +46,10 @@ GitHub About fields must be changed manually in the repository interface.
 - [ ] Verify popup statistics
 - [ ] Add, edit, hide, and restore a term
 - [ ] Export and re-import a vocabulary backup
+- [ ] Verify mastered words survive backup import, version restore, Chrome manual sync, and self-hosted manual sync
 - [ ] Confirm cloud sync is not enabled without an explicit user choice
 - [ ] Inspect the extension service worker for errors
-- [ ] Verify the cover image loads publicly
+- [ ] Verify the three README GIFs and cover image load publicly
 - [ ] Verify README links in a private browser window
 
 ## Optional GitHub release

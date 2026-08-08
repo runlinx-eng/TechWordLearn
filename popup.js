@@ -1,4 +1,53 @@
 const EXTENSION_ENABLED_KEY = "extension_enabled";
+let baseVocab = {};
+
+function normalizeWord(raw) {
+  const text = String(raw || "").trim().toLowerCase();
+  return /^[a-z][a-z'-]*$/.test(text) ? text : null;
+}
+
+function sanitizeWordMap(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const word = normalizeWord(key);
+    if (!word || typeof value !== "string" || !value.trim()) continue;
+    out[word] = value.trim();
+  }
+  return out;
+}
+
+function sanitizeWordSet(raw) {
+  const out = new Set();
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw) {
+    const word = normalizeWord(item);
+    if (word) out.add(word);
+  }
+  return out;
+}
+
+function buildActiveWordSet(items) {
+  const merged = { ...baseVocab, ...sanitizeWordMap(items && items.custom_vocab) };
+  for (const word of sanitizeWordSet(items && items.deleted_vocab)) {
+    delete merged[word];
+  }
+  return new Set(Object.keys(merged));
+}
+
+function loadBaseVocabulary() {
+  return fetch(chrome.runtime.getURL("vocabulary.json"))
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then((json) => {
+      baseVocab = sanitizeWordMap(json);
+    })
+    .catch(() => {
+      baseVocab = {};
+    });
+}
 
 function isExtensionEnabled(value) {
   return value !== false;
@@ -72,15 +121,13 @@ function renderStats() {
     }
 
     const weekKey = getCurrentWeekKey();
+    const activeWords = buildActiveWordSet(items);
     const weeklyMap = sanitizeCountMap(items.weekly_word_counts && items.weekly_word_counts[weekKey]);
-    let sortedWords = Object.entries(weeklyMap).sort((a, b) => b[1] - a[1]).slice(0, 50);
+    let sortedWords = rankWordCounts(weeklyMap, items.mastered_list, activeWords).slice(0, 50);
     let modeLabel = `本周 ${weekKey}`;
 
     if (sortedWords.length === 0) {
-      sortedWords = Object.entries(items)
-        .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 50);
+      sortedWords = rankWordCounts(items, items.mastered_list, activeWords).slice(0, 50);
       modeLabel = "累计记录（本周暂无）";
     }
 
@@ -165,10 +212,23 @@ function sanitizeCountMap(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out = {};
   for (const [k, v] of Object.entries(raw)) {
+    const word = normalizeWord(k);
+    if (!word || word !== k) continue;
     if (typeof v !== "number" || !Number.isFinite(v) || v < 0) continue;
-    out[k] = Math.floor(v);
+    out[word] = Math.floor(v);
   }
   return out;
+}
+
+function sanitizeMasteredSet(raw) {
+  return sanitizeWordSet(raw);
+}
+
+function rankWordCounts(raw, masteredList, activeWords) {
+  const mastered = sanitizeMasteredSet(masteredList);
+  return Object.entries(sanitizeCountMap(raw))
+    .filter(([word]) => !mastered.has(word) && (!activeWords || activeWords.has(word)))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 
 function getCurrentWeekKey() {
@@ -198,13 +258,32 @@ document.addEventListener("DOMContentLoaded", () => {
     renderStats();
     renderDiagnosis();
   });
-  loadGlobalState(() => {
-    renderDiagnosis();
-    renderStats();
+  loadBaseVocabulary().finally(() => {
+    loadGlobalState(() => {
+      renderDiagnosis();
+      renderStats();
+    });
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[EXTENSION_ENABLED_KEY]) return;
-    paintGlobalState(isExtensionEnabled(changes[EXTENSION_ENABLED_KEY].newValue));
+    if (area !== "local") return;
+    if (changes[EXTENSION_ENABLED_KEY]) {
+      paintGlobalState(isExtensionEnabled(changes[EXTENSION_ENABLED_KEY].newValue));
+    }
+    const hasCountChange = Object.entries(changes).some(([key, diff]) => {
+      if (normalizeWord(key) !== key) return false;
+      return [diff.oldValue, diff.newValue].some(
+        (value) => typeof value === "number" && Number.isFinite(value)
+      );
+    });
+    if (
+      changes.mastered_list ||
+      changes.custom_vocab ||
+      changes.deleted_vocab ||
+      changes.weekly_word_counts ||
+      hasCountChange
+    ) {
+      renderStats();
+    }
   });
 });
