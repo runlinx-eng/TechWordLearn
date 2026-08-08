@@ -19,20 +19,23 @@ function section(id, nextId) {
 test("main vocabulary view exposes only dense browsing controls", () => {
   const main = section("main-view", "stats-view");
   assert.match(html, /id="summary"/);
-  assert.match(html, /<header class="topbar">[\s\S]*?<h1>词库管理<\/h1>[\s\S]*?id="summary"[\s\S]*?id="topbar-actions"/);
+  assert.match(html, /<header class="topbar">[\s\S]*?<h1>我的词库<\/h1>[\s\S]*?id="summary"[\s\S]*?id="topbar-actions"/);
+  assert.match(html, /id="add-word-btn"[^>]*>\+ 添加单词<\/button>/);
   assert.match(main, /搜索单词……/);
   assert.match(main, />全部</);
-  assert.match(main, />自定义</);
-  assert.match(main, />基线</);
-  assert.match(main, />隐藏</);
+  assert.match(main, /title="你添加或修改过的词"[\s\S]*?>自定义<\/button>/);
+  assert.match(main, />默认<\/button>/);
+  assert.match(main, />已隐藏<\/button>/);
   assert.match(main, /查看统计&nbsp;›/);
   assert.doesNotMatch(main, /本周查询|weekly-query-total/);
   assert.equal((main.match(/class="vocab-column-header"/g) || []).length, 2);
-  assert.equal((main.match(/<span>单词<\/span><span>查询<\/span><span>来源<\/span>/g) || []).length, 2);
+  assert.equal((main.match(/<span>单词<\/span><span>点读<\/span><span><\/span>/g) || []).length, 2);
+  assert.doesNotMatch(main, />来源<|>查询<|>基线<|>覆盖基线</);
   assert.doesNotMatch(main, /<span>释义<\/span>|<span>编辑<\/span>|<span>操作<\/span>/);
   assert.doesNotMatch(main, /服务器地址|Token|版本历史|导入备份|导出备份/);
   assert.match(css, /\.vocab-item-row\s*\{[\s\S]*?min-height:\s*39px;/);
   assert.match(css, /\.vocab-pair-row\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/);
+  assert.match(css, /\.vocab-column-header,[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) 52px 14px;/);
   assert.match(css, /\.vocab-item-row:nth-child\(2\)\s*\{[\s\S]*?border-left:\s*1px solid var\(--line-strong\);/);
   assert.match(css, /\.browse-tools\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px, 1fr\) auto auto;/);
   assert.match(css, /\.vocab-item-row:hover \.row-chevron,[\s\S]*?opacity:\s*0\.45;/);
@@ -49,6 +52,12 @@ test("word meaning and mutation controls live in the second-level drawer", () =>
   assert.match(drawer, /id="hide-word-btn"/);
   assert.match(drawer, /id="delete-word-btn"/);
   assert.match(drawer, /id="unhide-word-btn"/);
+  assert.match(drawer, /恢复默认释义/);
+  assert.match(drawer, /隐藏这个词/);
+  assert.match(drawer, /删除这个词/);
+  assert.doesNotMatch(drawer, />来源<|>查询次数<|>恢复基线<|>隐藏词条<|>删除词条</);
+  assert.match(js, /detailCountEl\.textContent = `点读过 \$\{row\.count \|\| 0\} 次`;/);
+  assert.match(js, /\? "修改过默认释义"[\s\S]*?\? "默认词"[\s\S]*?: "自己添加";/);
 });
 
 test("maintenance menu and sync page use user-facing concepts", () => {

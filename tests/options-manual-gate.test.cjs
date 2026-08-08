@@ -220,7 +220,10 @@ test("dense list filters and detail drawer are read-only until an explicit actio
   const renderedWords = () =>
     tbody.children.flatMap((pair) => pair.children.map((item) => item.children[0].textContent));
   assert.deepEqual(renderedWords(), ["latency", "commit", "kernel"]);
-  assert.equal(harness.elements.get("summary").textContent, "3 生效 · 2 自定义 · 1 隐藏");
+  assert.equal(
+    harness.elements.get("summary").textContent,
+    "3 个词 · 2 个自己添加或修改 · 1 个已隐藏"
+  );
 
   const writesBeforeBrowsing = harness.localCounters.set;
   harness.context.setSourceFilter("custom");
@@ -231,18 +234,19 @@ test("dense list filters and detail drawer are read-only until an explicit actio
   assert.deepEqual(renderedWords(), ["scope"]);
 
   harness.context.openWordDetail("kernel");
-  assert.equal(harness.elements.get("detail-source").textContent, "基线 · 当前已覆盖");
+  assert.equal(harness.elements.get("detail-source").textContent, "修改过默认释义");
+  assert.equal(harness.elements.get("detail-count").textContent, "点读过 2 次");
   assert.equal(harness.elements.get("restore-baseline-btn").hidden, false);
   assert.equal(harness.elements.get("hide-word-btn").hidden, false);
   assert.equal(harness.elements.get("delete-word-btn").hidden, true);
 
   harness.context.openWordDetail("latency");
-  assert.equal(harness.elements.get("detail-source").textContent, "自定义");
+  assert.equal(harness.elements.get("detail-source").textContent, "自己添加");
   assert.equal(harness.elements.get("hide-word-btn").hidden, true);
   assert.equal(harness.elements.get("delete-word-btn").hidden, false);
 
   harness.context.openWordDetail("scope");
-  assert.equal(harness.elements.get("detail-source").textContent, "基线 · 已隐藏");
+  assert.equal(harness.elements.get("detail-source").textContent, "默认词 · 已隐藏");
   assert.equal(harness.elements.get("edit-detail-btn").hidden, true);
   assert.equal(harness.elements.get("unhide-word-btn").hidden, false);
   assert.equal(harness.localCounters.set, writesBeforeBrowsing);

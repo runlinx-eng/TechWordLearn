@@ -13,12 +13,12 @@ function paintGlobalState(enabled, helpText) {
 
   control.dataset.enabled = String(enabled);
   input.checked = enabled;
-  label.textContent = enabled ? "TechWordLearn enabled" : "TechWordLearn disabled";
+  label.textContent = enabled ? "TechWordLearn 已启用" : "TechWordLearn 已停用";
   help.textContent =
     helpText ||
     (enabled
-      ? "Highlights are active on all supported pages."
-      : "Page highlighting and interactions are paused.");
+      ? "支持网页中的标记和点读已开启。"
+      : "网页标记和点读已暂停。");
 }
 
 function loadGlobalState(callback) {
@@ -26,7 +26,7 @@ function loadGlobalState(callback) {
   chrome.storage.local.get([EXTENSION_ENABLED_KEY], (items) => {
     const lastErr = chrome.runtime.lastError;
     if (lastErr) {
-      paintGlobalState(true, `State read failed: ${lastErr.message}`);
+      paintGlobalState(true, `读取状态失败：${lastErr.message}`);
       if (input) input.disabled = true;
       if (callback) callback(true);
       return;
@@ -42,13 +42,13 @@ function loadGlobalState(callback) {
 function saveGlobalState(enabled) {
   const input = document.getElementById("global-enabled");
   if (input) input.disabled = true;
-  paintGlobalState(enabled, enabled ? "Enabling on all open pages..." : "Disabling on all open pages...");
+  paintGlobalState(enabled, enabled ? "正在启用…" : "正在停用…");
 
   chrome.storage.local.set({ [EXTENSION_ENABLED_KEY]: enabled }, () => {
     const lastErr = chrome.runtime.lastError;
     if (lastErr) {
       const restored = !enabled;
-      paintGlobalState(restored, `State save failed: ${lastErr.message}`);
+      paintGlobalState(restored, `保存状态失败：${lastErr.message}`);
       if (input) input.disabled = false;
       return;
     }
@@ -67,31 +67,31 @@ function renderStats() {
 
     if (lastErr) {
       listDiv.innerHTML = `<p class="empty">${lastErr.message}</p>`;
-      metaDiv.textContent = "Storage read failed.";
+      metaDiv.textContent = "读取记录失败。";
       return;
     }
 
     const weekKey = getCurrentWeekKey();
     const weeklyMap = sanitizeCountMap(items.weekly_word_counts && items.weekly_word_counts[weekKey]);
     let sortedWords = Object.entries(weeklyMap).sort((a, b) => b[1] - a[1]).slice(0, 50);
-    let modeLabel = `Week ${weekKey}`;
+    let modeLabel = `本周 ${weekKey}`;
 
     if (sortedWords.length === 0) {
       sortedWords = Object.entries(items)
         .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
         .sort((a, b) => b[1] - a[1])
         .slice(0, 50);
-      modeLabel = "All Time (fallback)";
+      modeLabel = "累计记录（本周暂无）";
     }
 
     const customCount = Object.keys(items.custom_vocab || {}).length;
     const deletedCount = Array.isArray(items.deleted_vocab) ? items.deleted_vocab.length : 0;
     const backupCount = Array.isArray(items.vocab_backups) ? items.vocab_backups.length : 0;
     metaDiv.textContent =
-      `${modeLabel} | Custom: ${customCount} | Hidden: ${deletedCount} | Snapshots: ${backupCount}`;
+      `${modeLabel} | 自己添加或修改 ${customCount} | 已隐藏 ${deletedCount} | 历史版本 ${backupCount}`;
 
     if (sortedWords.length === 0) {
-      listDiv.innerHTML = '<p class="empty">Go click highlighted words first.</p>';
+      listDiv.innerHTML = '<p class="empty">先在网页里点读几个高亮词。</p>';
       return;
     }
 
@@ -100,7 +100,7 @@ function renderStats() {
       html += `
         <li>
           <span class="word">${word}</span>
-          <span class="count">${count} times</span>
+          <span class="count">点读 ${count} 次</span>
         </li>
       `;
     }
@@ -113,19 +113,6 @@ function isInjectableUrl(url) {
   return /^(https?:\/\/|file:\/\/)/i.test(String(url || ""));
 }
 
-function readInjectDiag(callback) {
-  chrome.storage.local.get(["__twl_inject_diag"], (items) => {
-    const diag = items && items.__twl_inject_diag;
-    if (!diag || typeof diag !== "object") {
-      callback("");
-      return;
-    }
-    const stage = diag.stage ? String(diag.stage) : "unknown";
-    const msg = diag.message ? `, ${String(diag.message)}` : "";
-    callback(` | Last: ${stage}${msg}`);
-  });
-}
-
 function renderDiagnosis() {
   const diagDiv = document.getElementById("diag");
   if (!diagDiv) return;
@@ -133,46 +120,42 @@ function renderDiagnosis() {
   chrome.storage.local.get([EXTENSION_ENABLED_KEY], (items) => {
     const stateErr = chrome.runtime.lastError;
     if (stateErr) {
-      diagDiv.textContent = `Global state unavailable: ${stateErr.message}`;
+      diagDiv.textContent = `无法读取插件状态：${stateErr.message}`;
       return;
     }
 
     if (!isExtensionEnabled(items[EXTENSION_ENABLED_KEY])) {
-      diagDiv.textContent = "Global state: disabled | Page effects paused";
+      diagDiv.textContent = "当前网页：插件已停用";
       return;
     }
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs && tabs[0];
       if (!tab) {
-        diagDiv.textContent = "Page: (none) | Injection: no active tab";
+        diagDiv.textContent = "当前没有可检查的网页";
         return;
       }
 
       const url = String(tab.url || "");
-      const shortUrl = url.length > 80 ? `${url.slice(0, 77)}...` : url;
       if (!isInjectableUrl(url)) {
-        diagDiv.textContent = `Page: ${shortUrl} | Injection: blocked by scheme`;
+        diagDiv.textContent = "当前网页不支持扩展运行";
         return;
       }
 
       chrome.tabs.sendMessage(tab.id, { action: "twl_ping" }, (res) => {
         const lastErr = chrome.runtime.lastError;
         if (lastErr) {
-          readInjectDiag((extra) => {
-            diagDiv.textContent = `Page: ${shortUrl} | Injection: no content script (${lastErr.message})${extra}`;
-          });
+          diagDiv.textContent = "当前网页尚未连接扩展，请刷新后重试";
           return;
         }
 
         if (res && res.enabled === false) {
-          diagDiv.textContent = `Page: ${shortUrl} | Injection: paused`;
+          diagDiv.textContent = "当前网页：点读已暂停";
           return;
         }
 
-        const ver = res && res.version ? res.version : "unknown";
         const vocabCount = typeof (res && res.vocabSize) === "number" ? res.vocabSize : "n/a";
-        diagDiv.textContent = `Page: ${shortUrl} | Injection: active v${ver} | Vocab: ${vocabCount}`;
+        diagDiv.textContent = `当前网页：已启用 · ${vocabCount} 个词`;
       });
     });
   });

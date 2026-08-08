@@ -12,7 +12,7 @@
 
 ## 二、每周流程（推荐周五）
 
-1. 在扩展词库管理页选择“···”→“导出备份”。备份文件为 JSON，包含 `custom_vocab` / `deleted_vocab`。
+1. 在扩展“我的词库”页选择“···”→“导出备份”。备份文件为 JSON，包含 `custom_vocab` / `deleted_vocab`。
 2. 将导出文件放到项目中，例如：`imports/weekly-export-YYYY-MM-DD.json`
 3. 生成周快照：
 

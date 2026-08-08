@@ -1091,7 +1091,7 @@
       const key = normalizeWord(req.word);
       if (!key) return;
 
-      const def = prompt(`添加生词:\n"${key}"\n\n请输入中文释义:`, "自定义笔记");
+      const def = prompt(`把 "${key}" 加入我的词库\n\n请输入中文意思:`, "我的笔记");
       const cleanDef = def ? def.trim() : "";
       if (!cleanDef) return;
 

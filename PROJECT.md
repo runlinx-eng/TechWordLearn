@@ -2,9 +2,19 @@
 
 ## Position
 
-TechWordLearn is a public, open-source technical-English immersion project centered on a Chrome extension.
+TechWordLearn is a public, open-source, real-reading-driven dynamic vocabulary list centered on a Chrome extension.
 
-It helps a user learn technical vocabulary while reading real webpages by highlighting terms, showing definitions, providing pronunciation, tracking lookups, and maintaining a personal vocabulary.
+Its core value is to keep the user's limited attention on the words most worth remembering now. Words repeatedly point-read during normal webpage reading rise to the top; when one is mastered, the next group naturally takes its place.
+
+Canonical product language:
+
+> 产品定义：真实阅读驱动的动态生词表。
+>
+> 核心价值：把有限注意力持续给当前最值得记的词。
+>
+> 主口号：最实用的生词，会自己冒出来等我消灭。
+>
+> 机制口号：记住一个，下一批自然顶上来。
 
 ## Current status
 
@@ -25,10 +35,10 @@ This status does not claim production readiness or Chrome Web Store approval. Th
 
 Current product capabilities include:
 
-- webpage term highlighting;
+- webpage word highlighting;
 - hover definitions;
 - pronunciation;
-- total and weekly lookup statistics;
+- total and weekly point-reading statistics;
 - custom vocabulary management;
 - hidden and restored terms;
 - vocabulary backups and repository snapshots;
@@ -62,11 +72,11 @@ Documentation must not claim a capability that the current code does not impleme
 
 ## External presentation
 
-For public presentation, lead with the user problem and visible workflow:
+For public presentation, lead with the changing personal priority list rather than generic highlighting:
 
-> Learn technical English while reading real technical content.
+> 最实用的生词，会自己冒出来等我消灭。
 
-Public documentation should focus on the user problem, visible product behavior, installation, privacy, and current capabilities. Historical implementation details remain available through Git history.
+Public documentation should show how normal reading produces a ranked list, how the top words receive attention first, and how mastering one lets the next group rise naturally. GitHub, technical documentation, and AI articles are initial use cases, not the product definition. Historical implementation details remain available through Git history.
 
 ## Validation
 
@@ -92,7 +102,7 @@ Minimum manual validation in a fresh Chrome profile:
 
 ## Current priorities
 
-1. Keep the vocabulary-management surface lightweight: browsing first, word actions second, maintenance functions secondary.
+1. Keep the dynamic vocabulary surface lightweight: the words most worth learning now come first, explicit word actions come second, and maintenance functions remain secondary.
 2. Verify the complete extension flow in a fresh Chrome profile before any release decision.
 3. Treat a demo recording, GitHub release ZIP, and Showcase submission as optional, separately authorized publication work.
 4. Collect feedback before expanding product scope.

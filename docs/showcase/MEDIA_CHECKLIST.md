@@ -23,37 +23,83 @@ Recommended composition:
 
 The screenshot should communicate the product in one glance:
 
-> Technical terms are highlighted inside real reading, with definitions and learning signals available without leaving the page.
+> 最实用的生词，会自己冒出来等我消灭。
 
 ## Suggested demonstration page
 
 Use a public documentation or educational page whose content is safe to reproduce in a screenshot. Avoid private repositories, paid content, inboxes, dashboards, or pages containing personal identity.
 
+## Core story
+
+The demo is not a feature tour. Use the canonical product language:
+
+> 产品定义：真实阅读驱动的动态生词表。
+>
+> 核心价值：把有限注意力持续给当前最值得记的词。
+>
+> 主口号：最实用的生词，会自己冒出来等我消灭。
+>
+> 机制口号：记住一个，下一批自然顶上来。
+
+The user does not begin with a generic vocabulary list and does not manually rank words. Words encountered in real GitHub pages, technical documentation, AI articles, and other daily reading accumulate point-reading counts. The highest counts rise to the top of the popup and “我的词库”.
+
+The final shot must give the first three words the strongest visual emphasis. People naturally notice and remember the top three positions, so the demo should make the next learning decision feel immediate:
+
+```text
+1  evidence     点读 55
+2  routing      点读 51
+3  domain       点读 33
+```
+
+The intended takeaway is:
+
+> 不用先背别人整理的词表。正常阅读一段时间，最实用、最需要注意的生词会自己排到前面；先记前三个就够了。
+
 ## 45–60 second demo script
 
-**0–5 seconds**
+**0–8 seconds — normal reading, no study setup**
 
-Show the extension loaded in Chrome and state: “TechWordLearn helps me learn technical English while reading real technical content.”
+Quickly move through a public GitHub repository, technical documentation, and an AI article. The user is simply reading, not opening a vocabulary course or choosing a prepared word list.
 
-**5–18 seconds**
+On-screen text:
 
-Open a technical page. Point to highlighted terms and hover one to show its definition.
+> 不用先背词表
 
-**18–27 seconds**
+**8–22 seconds — useful words keep returning**
 
-Play pronunciation and mark or interact with the word.
+Show `evidence`, `routing`, and `domain` appearing in real context. Hover briefly for meaning and click unfamiliar words for pronunciation. Use quick time jumps to suggest this happens naturally across ordinary reading sessions.
 
-**27–38 seconds**
+On-screen text:
 
-Open the popup and show total or weekly lookup statistics.
+> 遇到最多、又反复点读的词，最值得注意
 
-**38–50 seconds**
+**22–36 seconds — the priority list appears**
 
-Open vocabulary management, add a custom term, and save it.
+Open the TechWordLearn popup. Let the ranked list settle into view, then open “我的词库” to show that the same words remain ordered by point-reading count without manual sorting.
 
-**50–60 seconds**
+**36–50 seconds — remember the top three**
 
-Refresh the page, show the new term highlighted, and close with: “Built as an open-source Chrome extension with Codex assisting development.”
+Dim the rest of the list and reveal the first three positions one by one:
+
+```text
+1  evidence     点读 55
+2  routing      点读 51
+3  domain       点读 33
+```
+
+On-screen text:
+
+> 今天先记这三个
+
+**50–60 seconds — close on the product value**
+
+Return briefly to the real webpage, then end on:
+
+> 最实用的生词，会自己冒出来等我消灭。
+>
+> 记住一个，下一批自然顶上来。
+
+Avoid spending the core demo on backup, synchronization, version history, server settings, or implementation details. Those capabilities may appear in separate supporting material, but they weaken this story.
 
 ## Public URL check
 

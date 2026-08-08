@@ -453,7 +453,7 @@ function hideManualSyncActions() {
 
 function manualSyncCounts(state) {
   const normalized = manualSync.normalizeState(state);
-  return `自定义 ${Object.keys(normalized.custom_vocab).length}，隐藏 ${normalized.deleted_vocab.length}`;
+  return `${Object.keys(normalized.custom_vocab).length} 个自己添加或修改，${normalized.deleted_vocab.length} 个已隐藏`;
 }
 
 function renderManualSyncContext(context) {
@@ -749,7 +749,6 @@ function mergeRows(viewCustom, viewDeleted) {
       word,
       definition: def,
       count: wordCounts[word] || 0,
-      source: "基线",
       hasBase: true,
       hasCustom: false,
     };
@@ -762,7 +761,6 @@ function mergeRows(viewCustom, viewDeleted) {
       word,
       definition: def,
       count: wordCounts[word] || 0,
-      source: hasBase ? "覆盖基线" : "自定义",
       hasBase,
       hasCustom: true,
     };
@@ -782,7 +780,6 @@ function hiddenRowsForState(viewCustom, viewDeleted) {
         word,
         definition: hasCustom ? customMap[word] : baseVocab[word] || "",
         count: wordCounts[word] || 0,
-        source: hasBase && hasCustom ? "覆盖基线" : hasBase ? "基线" : "自定义",
         hasBase,
         hasCustom,
         hidden: true,
@@ -816,10 +813,10 @@ function renderFilterState() {
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
   const titles = {
-    all: "当前词库",
-    custom: "自定义词",
-    base: "基线词",
-    hidden: "隐藏词",
+    all: "我的词库",
+    custom: "你添加或修改过的词",
+    base: "默认词",
+    hidden: "已隐藏的词",
   };
   vocabSectionTitleEl.textContent = titles[currentSourceFilter] || titles.all;
 }
@@ -832,7 +829,7 @@ function renderTable() {
   if (filtered.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty";
-    empty.textContent = currentSourceFilter === "hidden" ? "没有隐藏词条" : "没有匹配的词条";
+    empty.textContent = currentSourceFilter === "hidden" ? "没有已隐藏的词" : "没有匹配的单词";
     tbody.appendChild(empty);
     return;
   }
@@ -842,7 +839,10 @@ function renderTable() {
     item.type = "button";
     item.className = "vocab-item-row";
     item.setAttribute("role", "listitem");
-    item.setAttribute("aria-label", `${row.word}，查询 ${row.count || 0} 次，${row.source}`);
+    item.setAttribute(
+      "aria-label",
+      `${row.word}，点读 ${row.count || 0} 次${row.hidden ? "，已隐藏" : ""}`
+    );
     item.addEventListener("click", () => openWordDetail(row.word));
 
     const word = document.createElement("span");
@@ -853,11 +853,6 @@ function renderTable() {
     count.className = "row-count";
     count.textContent = String(row.count || 0);
 
-    const source = document.createElement("span");
-    const sourceClass = row.source === "覆盖基线" ? "override" : row.source === "自定义" ? "custom" : "base";
-    source.className = `source-label ${sourceClass}${row.hidden ? " hidden-source" : ""}`;
-    source.textContent = row.hidden ? `隐藏 · ${row.source}` : row.source;
-
     const chevron = document.createElement("span");
     chevron.className = "row-chevron";
     chevron.setAttribute("aria-hidden", "true");
@@ -865,7 +860,6 @@ function renderTable() {
 
     item.appendChild(word);
     item.appendChild(count);
-    item.appendChild(source);
     item.appendChild(chevron);
     return item;
   };
@@ -978,13 +972,13 @@ function getDisplayedVocabState() {
 function renderViewContext(viewState) {
   if (viewState.mode === "version" && viewState.snapshot) {
     vocabSectionTitleEl.textContent = `词库预览：${snapshotDisplayText(viewState.snapshot)}`;
-    editorTitleEl.textContent = "新增或修改词条（版本预览只读）";
+    editorTitleEl.textContent = "添加或修改单词（版本预览只读）";
     return;
   }
 
-  vocabSectionTitleEl.textContent = "当前生效词库";
+  vocabSectionTitleEl.textContent = "我的词库";
   if (!editingWord) {
-    editorTitleEl.textContent = "新增或修改词条";
+    editorTitleEl.textContent = "添加或修改单词";
   }
 }
 
@@ -1004,13 +998,13 @@ function renderActiveVersionDisplay(list) {
       list.find((item) => item.id === currentVersionId) ||
       null;
     if (currentSnapshot) {
-      activeVersionDisplayEl.textContent = `${activeCount} 个生效词 · 历史版本 ${formatTime(currentSnapshot.at)}`;
+      activeVersionDisplayEl.textContent = `${activeCount} 个词 · 历史版本 ${formatTime(currentSnapshot.at)}`;
       return;
     }
-    activeVersionDisplayEl.textContent = `${activeCount} 个生效词 · 历史版本`;
+    activeVersionDisplayEl.textContent = `${activeCount} 个词 · 历史版本`;
     return;
   }
-  activeVersionDisplayEl.textContent = `${activeCount} 个生效词`;
+  activeVersionDisplayEl.textContent = `${activeCount} 个词`;
 }
 
 function versionDiffRows(snapshot) {
@@ -1102,8 +1096,8 @@ function formatVersionLabel(label) {
   const text = String(label || "manual");
   if (text.startsWith("upsert:")) return `修改 ${text.slice(7)}`;
   if (text.startsWith("delete:")) return `删除 ${text.slice(7)}`;
-  if (text.startsWith("restore_base:")) return `恢复基线 ${text.slice(13)}`;
-  if (text.startsWith("unhide:")) return `取消隐藏 ${text.slice(7)}`;
+  if (text.startsWith("restore_base:")) return `恢复默认释义 ${text.slice(13)}`;
+  if (text.startsWith("unhide:")) return `重新显示 ${text.slice(7)}`;
   if (text.startsWith("before_manual_sync_download:")) return "Chrome 同步前备份";
   if (text === "before_set_current") return "恢复版本前备份";
   if (text === "import_json") return "导入备份";
@@ -1131,7 +1125,7 @@ function renderVersions() {
     !latestRaw.some((item) => item.id === currentVersionId) &&
     list.some((item) => item.id === currentVersionId);
   versionSummaryEl.textContent = pinnedCurrent
-    ? `已保存 ${backups.length} 个版本，展示最近 3 个（含当前生效）`
+    ? `已保存 ${backups.length} 个版本，展示最近 3 个（含当前使用版本）`
     : `已保存 ${backups.length} 个版本，展示最近 3 个`;
 
   if (!selectedVersionId || !list.some((item) => item.id === selectedVersionId)) {
@@ -1169,7 +1163,7 @@ function renderVersions() {
       if (isCurrent) {
         const currentBadge = document.createElement("span");
         currentBadge.className = "version-badge version-badge-current";
-        currentBadge.textContent = "当前生效";
+        currentBadge.textContent = "当前使用";
         badges.appendChild(currentBadge);
       }
 
@@ -1189,7 +1183,7 @@ function renderVersions() {
     meta.className = "meta";
     const customCount = Object.keys(snapshot.custom_vocab || {}).length;
     const deletedCount = Array.isArray(snapshot.deleted_vocab) ? snapshot.deleted_vocab.length : 0;
-    meta.textContent = `自定义 ${customCount} | 隐藏 ${deletedCount}`;
+    meta.textContent = `${customCount} 个自己添加或修改 | ${deletedCount} 个已隐藏`;
     item.appendChild(meta);
 
     const label = document.createElement("p");
@@ -1211,7 +1205,7 @@ function renderSummary(viewState) {
     viewState.mode === "version" && viewState.snapshot
       ? `预览版本 ${formatTime(viewState.snapshot.at)} · `
       : "";
-  summaryEl.textContent = `${viewPrefix}${activeCount} 生效 · ${customCount} 自定义 · ${hiddenCount} 隐藏`;
+  summaryEl.textContent = `${viewPrefix}${activeCount} 个词 · ${customCount} 个自己添加或修改 · ${hiddenCount} 个已隐藏`;
 }
 
 function renderAll() {
@@ -1250,8 +1244,8 @@ function renderWordDrawer() {
   if (drawerMode === "edit") {
     wordDetailViewEl.hidden = true;
     wordEditViewEl.hidden = false;
-    drawerTitleEl.textContent = editingWord || "新增词条";
-    editorTitleEl.textContent = editingWord ? `编辑 ${editingWord}` : "新增词条";
+    drawerTitleEl.textContent = editingWord || "添加单词";
+    editorTitleEl.textContent = editingWord ? `修改 ${editingWord}` : "添加单词";
     return;
   }
 
@@ -1265,17 +1259,16 @@ function renderWordDrawer() {
   wordEditViewEl.hidden = true;
   drawerTitleEl.textContent = row.word;
   detailDefinitionEl.textContent = row.definition || "—";
-  detailCountEl.textContent = String(row.count || 0);
-  if (row.hidden) {
-    detailSourceEl.textContent = `${row.source} · 已隐藏`;
-  } else if (row.hasBase && row.hasCustom) {
-    detailSourceEl.textContent = "基线 · 当前已覆盖";
-  } else {
-    detailSourceEl.textContent = row.source;
-  }
+  detailCountEl.textContent = `点读过 ${row.count || 0} 次`;
+  const wordType = row.hasBase && row.hasCustom
+    ? "修改过默认释义"
+    : row.hasBase
+      ? "默认词"
+      : "自己添加";
+  detailSourceEl.textContent = row.hidden ? `${wordType} · 已隐藏` : wordType;
 
   editDetailBtn.hidden = Boolean(row.hidden);
-  editDetailBtn.textContent = row.hasBase ? "编辑释义" : "编辑";
+  editDetailBtn.textContent = "修改";
   restoreBaselineBtn.hidden = row.hidden || !(row.hasBase && row.hasCustom);
   unhideWordBtn.hidden = !row.hidden;
   hideWordBtn.hidden = row.hidden || !row.hasBase;
@@ -1413,8 +1406,8 @@ function removeWord(word) {
   if (!ensureLiveEditable()) return;
   const hasBase = Object.prototype.hasOwnProperty.call(baseVocab, word);
   const tip = hasBase
-    ? `删除 ${word} 后会隐藏该基线词，是否继续？`
-    : `确定删除自定义词 ${word}？`;
+    ? `删除 ${word} 后会隐藏这个默认词，是否继续？`
+    : `确定删除自己添加的单词 ${word}？`;
   if (!window.confirm(tip)) return;
 
   const nextCustom = { ...customVocab };
@@ -1429,7 +1422,7 @@ function removeWord(word) {
 
 function restoreBaseline(word) {
   if (!ensureLiveEditable()) return;
-  if (!window.confirm(`恢复 ${word} 到基线释义？`)) return;
+  if (!window.confirm(`恢复 ${word} 的默认释义？`)) return;
   const nextCustom = { ...customVocab };
   delete nextCustom[word];
 
@@ -1453,7 +1446,7 @@ function setCurrentVersion() {
   }
 
   if (currentVersionMode === "version" && currentVersionId === snapshot.id) {
-    setStatus("该版本已在生效");
+    setStatus("当前已经在使用这个版本");
     return;
   }
 
@@ -1580,7 +1573,7 @@ function importJson(file) {
       const parsed = JSON.parse(String(reader.result || "{}"));
       const incoming = parseImportPayload(parsed);
 
-      if (!window.confirm("导入备份会和当前词库合并，同名词条将被覆盖。继续？")) {
+      if (!window.confirm("导入备份会和当前词库合并，同名单词将被覆盖。继续？")) {
         return;
       }
 

@@ -16,14 +16,14 @@
 Suggested description:
 
 ```text
-在真实英文技术内容中学习技术英语：网页词汇高亮、中文释义、发音、查询统计与个人词库管理。
+真实阅读驱动的动态生词表：最实用的生词会自己冒出来，记住一个，下一批自然顶上来。
 ```
 
 Suggested topics:
 
 ```text
 chrome-extension
-technical-english
+contextual-learning
 language-learning
 vocabulary
 education

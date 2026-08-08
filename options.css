@@ -361,7 +361,7 @@ h4 {
 .vocab-column-header,
 .vocab-item-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 88px 14px;
+  grid-template-columns: minmax(0, 1fr) 52px 14px;
   align-items: center;
   gap: 8px;
 }
@@ -452,24 +452,6 @@ h4 {
 .vocab-item-row:focus-visible .row-chevron {
   opacity: 0.45;
   transform: translateX(0);
-}
-
-.source-label {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-label.custom,
-.source-label.override {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.source-label.hidden-source {
-  color: var(--faint);
 }
 
 .empty {

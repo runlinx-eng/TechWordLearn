@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Tech Word Immersion",
+  "name": "TechWordLearn",
   "version": "1.13",
-  "description": "Highlight technical English words, track progress, and add custom vocabulary.",
+  "description": "真实阅读驱动的动态生词表：把有限注意力持续给当前最值得记的词。",
   "permissions": ["storage", "contextMenus", "tts", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],
   "background": {

@@ -6,7 +6,7 @@ This document describes the current behavior of the TechWordLearn repository. It
 
 TechWordLearn processes webpage text locally in the browser to find and highlight terms. It does not require a TechWordLearn account or an OpenAI API key.
 
-The project does not intentionally send full page content, browsing history, or lookup history to a developer-operated server.
+The project does not intentionally send full page content, browsing history, or point-reading history to a developer-operated server.
 
 ## Data processed on webpages
 
@@ -23,7 +23,7 @@ Depending on use, Chrome extension storage may contain:
 - custom vocabulary and definitions;
 - deleted or hidden vocabulary;
 - mastered-word state;
-- lookup counts and weekly lookup counts;
+- point-reading counts and weekly point-reading counts;
 - vocabulary backups;
 - selected vocabulary version state;
 - manual synchronization revisions, hashes, timestamps, and status;
@@ -67,7 +67,7 @@ The current extension requests:
 
 - `storage`: save vocabulary, settings, backups, and learning state;
 - `contextMenus`: add selected terms through the browser context menu;
-- `tts`: pronounce technical vocabulary through Chrome's text-to-speech service;
+- `tts`: pronounce selected English words through Chrome's text-to-speech service;
 - `scripting`: inject extension scripts and styles when necessary;
 - `tabs`: identify and reinject supported open pages after extension changes or service-worker restarts;
 - `<all_urls>` host access: highlight terms on webpages selected by the user;

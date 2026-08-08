@@ -2,7 +2,7 @@
 
 ## Position
 
-TechWordLearn is a Manifest V3 Chrome extension for learning technical English while reading real webpages. `PROJECT.md` owns the stable project boundary; `README.md` owns user-facing setup and operation.
+TechWordLearn is a Manifest V3 Chrome extension that turns real webpage reading into a dynamic personal vocabulary list. Words the user repeatedly point-reads rise to the top, keeping limited attention on what is most worth learning now. `PROJECT.md` owns the stable project boundary; `README.md` owns user-facing setup and operation.
 
 ## Run and validate
 

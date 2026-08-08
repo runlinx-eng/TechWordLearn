@@ -358,7 +358,7 @@ function applyGlobalEnabledUi(enabled) {
     }
     if (chrome.action.setTitle) {
       chrome.action.setTitle({
-        title: isEnabled ? "TechWordLearn (enabled)" : "TechWordLearn (disabled)",
+        title: isEnabled ? "TechWordLearn（已启用）" : "TechWordLearn（已停用）",
       });
     }
   }
@@ -504,7 +504,7 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.removeAll(() => {
       chrome.contextMenus.create({
         id: "add-tech-word",
-        title: "Add \"%s\" to Tech Vocabulary",
+        title: "把 \"%s\" 加入我的词库",
         contexts: ["selection"]
       });
       void refreshGlobalEnabledUi();

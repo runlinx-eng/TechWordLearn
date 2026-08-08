@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TechWordLearn 词库管理</title>
+  <title>TechWordLearn 我的词库</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
   <main class="page">
     <header class="topbar">
-      <h1>词库管理</h1>
+      <h1>我的词库</h1>
       <p id="summary" class="library-summary">Loading...</p>
       <div id="topbar-actions" class="topbar-actions">
-        <button id="add-word-btn" class="btn primary" type="button">+ 新增词</button>
+        <button id="add-word-btn" class="btn primary" type="button">+ 添加单词</button>
         <div class="more-wrap">
           <button
             id="more-menu-btn"
@@ -49,9 +49,16 @@
         </label>
         <div class="filter-tabs" role="group" aria-label="筛选词库">
           <button id="filter-all-btn" class="filter-tab active" type="button" aria-pressed="true">全部</button>
-          <button id="filter-custom-btn" class="filter-tab" type="button" aria-pressed="false">自定义</button>
-          <button id="filter-base-btn" class="filter-tab" type="button" aria-pressed="false">基线</button>
-          <button id="filter-hidden-btn" class="filter-tab" type="button" aria-pressed="false">隐藏</button>
+          <button
+            id="filter-custom-btn"
+            class="filter-tab"
+            type="button"
+            aria-label="自定义：你添加或修改过的词"
+            title="你添加或修改过的词"
+            aria-pressed="false"
+          >自定义</button>
+          <button id="filter-base-btn" class="filter-tab" type="button" aria-pressed="false">默认</button>
+          <button id="filter-hidden-btn" class="filter-tab" type="button" aria-pressed="false">已隐藏</button>
         </div>
         <button id="open-stats-view-btn" class="stats-link" type="button">
           <span>查看统计&nbsp;›</span>
@@ -59,11 +66,11 @@
       </div>
 
       <section class="list-panel" aria-labelledby="vocab-section-title">
-        <h2 id="vocab-section-title" class="sr-only">当前词库</h2>
+        <h2 id="vocab-section-title" class="sr-only">我的词库</h2>
         <div class="vocab-grid-wrap">
           <div class="vocab-grid-header" aria-hidden="true">
-            <div class="vocab-column-header"><span>单词</span><span>查询</span><span>来源</span><span></span></div>
-            <div class="vocab-column-header"><span>单词</span><span>查询</span><span>来源</span><span></span></div>
+            <div class="vocab-column-header"><span>单词</span><span>点读</span><span></span></div>
+            <div class="vocab-column-header"><span>单词</span><span>点读</span><span></span></div>
           </div>
           <div id="vocab-tbody" class="vocab-grid-body" role="list"></div>
         </div>
@@ -92,7 +99,7 @@
         <button id="back-from-sync-btn" class="back-btn" type="button">‹ 返回词库</button>
         <div>
           <h2>多设备同步</h2>
-          <p>让其他设备使用相同的自定义词库。</p>
+          <p>让其他设备使用相同的自己添加或修改过的词。</p>
         </div>
       </header>
 
@@ -196,10 +203,10 @@
   </main>
 
   <div id="drawer-layer" class="drawer-layer" hidden>
-    <button id="drawer-backdrop" class="drawer-backdrop" type="button" aria-label="关闭词条详情"></button>
+    <button id="drawer-backdrop" class="drawer-backdrop" type="button" aria-label="关闭单词详情"></button>
     <aside id="word-drawer" class="word-drawer" aria-labelledby="drawer-title">
       <header class="drawer-header">
-        <h2 id="drawer-title">词条详情</h2>
+        <h2 id="drawer-title">单词详情</h2>
         <button id="close-drawer-btn" class="drawer-close" type="button" aria-label="关闭">×</button>
       </header>
 
@@ -210,27 +217,27 @@
             <dd id="detail-definition">—</dd>
           </div>
           <div>
-            <dt>来源</dt>
+            <dt class="sr-only">单词类型</dt>
             <dd id="detail-source">—</dd>
           </div>
           <div>
-            <dt>查询次数</dt>
-            <dd id="detail-count">0</dd>
+            <dt class="sr-only">点读次数</dt>
+            <dd id="detail-count">点读过 0 次</dd>
           </div>
         </dl>
         <div class="detail-primary-action">
-          <button id="edit-detail-btn" class="btn primary" type="button">编辑</button>
+          <button id="edit-detail-btn" class="btn primary" type="button">修改</button>
         </div>
         <div class="detail-secondary-actions">
-          <button id="restore-baseline-btn" class="text-action" type="button" hidden>恢复基线</button>
-          <button id="unhide-word-btn" class="text-action" type="button" hidden>取消隐藏</button>
-          <button id="hide-word-btn" class="text-action" type="button" hidden>隐藏词条</button>
-          <button id="delete-word-btn" class="text-action danger" type="button" hidden>删除词条</button>
+          <button id="restore-baseline-btn" class="text-action" type="button" hidden>恢复默认释义</button>
+          <button id="unhide-word-btn" class="text-action" type="button" hidden>重新显示这个词</button>
+          <button id="hide-word-btn" class="text-action" type="button" hidden>隐藏这个词</button>
+          <button id="delete-word-btn" class="text-action danger" type="button" hidden>删除这个词</button>
         </div>
       </div>
 
       <div id="word-edit-view" class="drawer-content" hidden>
-        <h3 id="editor-title">新增词条</h3>
+        <h3 id="editor-title">添加单词</h3>
         <form id="edit-form">
           <div class="field-row">
             <label for="word-input">单词</label>

@@ -42,7 +42,7 @@ Chrome Extension Manifest V3, vanilla JavaScript, HTML, CSS, Chrome Storage, Chr
 ### List use cases showcased
 
 ```text
-Education, technical English learning, contextual vocabulary acquisition, personal knowledge tracking, browser productivity
+Education, reading-driven vocabulary prioritization, contextual vocabulary learning, personal learning queues, browser productivity
 ```
 
 ### Which capability are you showcasing?
@@ -84,27 +84,27 @@ Leave blank unless a stable public demo is added.
 ### Setup steps
 
 ```text
-Clone or download the repository. In Chrome open chrome://extensions, enable Developer mode, choose Load unpacked, and select the repository root. Open an English technical webpage and refresh it. Hover a highlighted term for its definition, click for pronunciation, and use the popup or options page for statistics and vocabulary management.
+Clone or download the repository. In Chrome open chrome://extensions, enable Developer mode, choose Load unpacked, and select the repository root. Open a normal webpage containing English words and refresh it. Hover a highlighted word for its definition, click for pronunciation, and use the popup or “我的词库” to see which words deserve attention first.
 ```
 
 ### Project title
 
 ```text
-TechWordLearn: Learn Technical English While You Browse
+TechWordLearn: Let Useful Words Rise to the Top
 ```
 
 ### Tagline
 
 ```text
-A Chrome extension that highlights technical terms inside real webpages, explains and pronounces them in context, and turns repeated lookups into a personal learning record.
+A real-reading-driven dynamic vocabulary list. Words repeatedly point-read rise to the top, so the user always knows what to learn next.
 ```
 
 ### Project description
 
 ```text
-TechWordLearn helps people learn technical English without leaving the material they are already reading. It highlights recognized terms directly in documentation, articles, repositories, and product pages, then provides contextual definitions and pronunciation on demand.
+TechWordLearn turns normal webpage reading into a dynamic personal vocabulary list. Instead of starting with a generic list of words that might be useful, the user keeps reading as usual. Words repeatedly clicked for pronunciation rise to the top, keeping limited attention on what is most worth remembering now.
 
-The extension also tracks repeated lookups, supports custom and hidden vocabulary, and provides backup import/export, version snapshots, browser sync, and optional self-hosted synchronization. Page matching happens locally, and no OpenAI API key is required at runtime.
+When one word is mastered, the next group naturally takes its place. The extension also supports contextual definitions, pronunciation, custom and hidden words, backup import/export, version snapshots, browser sync, and optional self-hosted synchronization. Page matching happens locally, and no OpenAI API key is required at runtime.
 
 Codex helped evolve the project from a personal browser tool into a more coherent, inspectable open-source prototype by supporting code analysis, bounded implementation, debugging, validation, and documentation.
 ```
