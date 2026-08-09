@@ -1,4 +1,4 @@
-# TechWordLearn
+ TechWordLearn
 
 ## 越常用 / 越没记住 → 越在你眼前 → 直到记住
 
