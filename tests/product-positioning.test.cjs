@@ -22,10 +22,16 @@ test("active product surfaces use the reading-driven dynamic vocabulary definiti
     "真实阅读驱动的动态生词表：把有限注意力持续给当前最值得记的词。"
   );
 
-  assert.match(readme, /越常用\/越没记住-越在你眼前-直到记住/);
-  assert.match(readme, /真实阅读驱动的动态生词表。/);
-  assert.match(readme, /把有限注意力持续给当前最值得记的词。/);
-  assert.match(readme, /记住一个，下一批自然顶上来。/);
+  const firstUseIndex = readme.indexOf("### 第一次使用：4 步就够");
+  assert.ok(firstUseIndex > 0);
+  const firstScreen = readme.slice(0, firstUseIndex);
+  assert.match(firstScreen, /越常用 \/ 越没记住 → 越在你眼前 → 直到记住/);
+  assert.match(firstScreen, /不用先决定背什么。/);
+  assert.match(firstScreen, /你在真实阅读里反复需要的生词，会自己跑到前面。/);
+  assert.match(firstScreen, /### 1\. 遇到生词，加入/);
+  assert.match(firstScreen, /### 2\. 越点，越靠前/);
+  assert.match(firstScreen, /### 3\. 记住了，让它消失/);
+  assert.doesNotMatch(firstScreen, /动态生词表|有限注意力|不用先背一堆/);
   assert.match(readme, /<sub><strong>给 AI 和项目分析工具的产品语义：<\/strong><br>/);
   assert.match(readme, /排行榜与掌握后退出共同构成核心学习反馈/);
   assert.match(readme, /href="PRODUCT\.md"/);
