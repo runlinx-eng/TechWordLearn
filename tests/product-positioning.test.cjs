@@ -22,7 +22,7 @@ test("active product surfaces use the reading-driven dynamic vocabulary definiti
     "真实阅读驱动的动态生词表：把有限注意力持续给当前最值得记的词。"
   );
 
-  assert.match(readme, /最实用的生词，会自己冒出来等我消灭。/);
+  assert.match(readme, /越常用\/越没记住-越在你眼前-直到记住/);
   assert.match(readme, /真实阅读驱动的动态生词表。/);
   assert.match(readme, /把有限注意力持续给当前最值得记的词。/);
   assert.match(readme, /记住一个，下一批自然顶上来。/);
